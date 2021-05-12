@@ -1,9 +1,11 @@
-# file-storage-server-SOL
-
 USAGE:
 
 	"make"
 	"./server" to run the server
+	"./client" with options to run the client
+
+es: valgrind --leak-check=full ./client -f /tmp/server_sock -d appdata -w headers,2 -W config.txt -r config.txt,config.txt -R
+
 	"bash run_multiclient.sh" to spawn 100 clients
 	"make cleanall" at the end
 
@@ -12,9 +14,9 @@ WHAT WAS DONE:
 1)	Initial Makefile management with dynamic libraries
 2)	Configuration Server parsing by server itself
 3)	The server can handle multiple client requests with a fixed
-	number of worker threadsaa
+	number of worker threads
 4)	Worker threads use a Queue data structure in mutual exclusion
-	to manipulate the requestsa
+	to manipulate the requests
 5)	A small helper was created to catch more arguments in an option
 	(client side)
 
@@ -26,8 +28,8 @@ But this is going to be fixed once I am going to worry about ending signals.
 
 WHAT TO DO:
 
--	Client Interface
 -	Storage data structure
+-	Implement select/pipe on master-worker pattern
 -	API Implementation
 -	Handle Locks on file inside de file storage
 -	Implement the FIFO in order to make space to 
