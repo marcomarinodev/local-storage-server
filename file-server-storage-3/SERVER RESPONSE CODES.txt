@@ -1,0 +1,10 @@
+SERVER RESPONSE CODES
+
+404|Failed file search
+200|succesfully file opening
+210|succesfully close
+220|succesfully read
+230|succesfully write
+240|succesfully lock
+250|succesfully unlock
+260|succesfully creation
