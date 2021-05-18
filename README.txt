@@ -1,7 +1,8 @@
 USAGE:
 
-	"make"
-	"./server" to run the server
+	"make cleanall"
+	"make all"
+	"./server configuration.txt" to run the server
 	"./client" with options to run the client
 
 es: valgrind --leak-check=full ./client -f /tmp/server_sock -d appdata -w headers,2 -W config.txt -r config.txt,config.txt -R
@@ -19,6 +20,11 @@ WHAT WAS DONE:
 	to manipulate the requests
 5)	A small helper was created to catch more arguments in an option
 	(client side)
+6)	Storage data structure
+7)	Implemen select on master/worker pattern
+8)	openFile, readFile, writeFile, openConnection, readNFiles
+9)	LRU politic
+10)	Locks handling
 
 NOTES:
 
@@ -28,11 +34,8 @@ But this is going to be fixed once I am going to worry about ending signals.
 
 WHAT TO DO:
 
--	Storage data structure
--	Implement select/pipe on master-worker pattern
--	API Implementation
--	Handle Locks on file inside de file storage
--	Implement the FIFO in order to make space to 
-	a new incoming file
+-	End API implementation
 -	Signal Handler (SIGINT, SIGQUIT, SIGHOP)
+-	Solve possible mem leaks in server
+-	Manage some exception
 -	Deployment Testing
