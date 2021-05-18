@@ -1,0 +1,4 @@
+/tmp/server_sock
+3
+28000
+1000
