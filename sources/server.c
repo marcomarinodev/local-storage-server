@@ -13,10 +13,6 @@ pthread_mutex_t storage_mutex = PTHREAD_MUTEX_INITIALIZER;
 /* Workers TID */
 pthread_t *workers_tid;
 
-/* CONNECTED CLIENTS */
-LList fds_client;
-pthread_mutex_t fds_client_mutex = PTHREAD_MUTEX_INITIALIZER;
-
 /* SERVER SOCKET FILE DESCRIPTOR */
 int fd_socket;
 
