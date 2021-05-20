@@ -162,7 +162,7 @@ int removeFile(const char *pathname)
     {
         if (response.code == REMOVE_FILE_SUCCESS)
             return 0;
-        
+
         if (response.code == FAILED_FILE_SEARCH)
         {
             errno = FAILED_FILE_SEARCH;
@@ -245,7 +245,7 @@ int closeFile(const char *pathname)
     {
         if (response.code == CLOSE_FILE_SUCCESS)
             return 0;
-        
+
         if (response.code == IS_ALREADY_CLOSED)
             return 0;
 
@@ -261,7 +261,6 @@ int closeFile(const char *pathname)
             return -1;
         }
     }
-
 
     /* errno = EINTR */
     return -1;
@@ -311,7 +310,7 @@ int writeFile(const char *pathname, const char *dirname)
 
     int n_ejected = response.code;
     printf("\n>>>Ejected files: %d<<<\n", response.code);
-    Response ejectedFiles[response.code];
+    Response ejectedFiles[n_ejected];
 
     /* expecting response.code files to be ejected */
     for (int i = 0; i < n_ejected; i++)
@@ -325,7 +324,34 @@ int writeFile(const char *pathname, const char *dirname)
     /* put ejected files into dirname if it's specified */
     if (dirname != NULL)
     {
-        printf("\n<<<Inserted %d files in dirname>>>\n", n_ejected);
+        for (int i = 0; i < n_ejected; i++)
+        {
+            char filename[MAX_PATHNAME];
+            char abs_path_copy[MAX_PATHNAME];
+            char *token;
+            strncpy(abs_path_copy, ejectedFiles[i].path, strlen(ejectedFiles[i].path) + 1);
+
+            token = strtok(abs_path_copy, "/");
+
+            while (token != NULL)
+            {
+                sprintf(filename, "%s", token);
+                token = strtok(NULL, "/");
+            }
+
+            char dir_abs_path[MAX_PATHNAME];
+
+            realpath(dirname, dir_abs_path);
+
+            strcat(dir_abs_path, "/");
+            strcat(dir_abs_path, filename);
+
+            int fd = open(dir_abs_path, (O_RDWR | O_CREAT));
+
+            write(fd, ejectedFiles[i].content, ejectedFiles[i].content_size * sizeof(char));
+
+            close(fd);
+        }
     }
 
     if (response.code == WRITE_SUCCESS)
