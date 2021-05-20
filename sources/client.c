@@ -432,7 +432,7 @@ int perform(Client_setup setup, LList *request_commands)
                 PATH_CHECK(abs_path);
 
                 printf("\n-c command execution:\n");
-    
+
                 if (removeFile(abs_path) == 0)
                 {
                     printf("\n<<<SUCCESFULLY REMOVED THE FILE>>>\n");
@@ -714,14 +714,26 @@ int lsR(const char *dirname, int *n)
         {
             char abs_path[MAXFILENAME];
 
-            int open_res = openFile(realpath(dirname, abs_path), O_CREATE | O_LOCK);
+            int open_res = openFile(realpath(dirname, abs_path), (O_CREATE | O_LOCK));
 
             /* API Call */
             if (open_res == 0)
             {
 
                 if (writeFile(realpath(dirname, abs_path), NULL) == 0)
+                {
                     (*n)--;
+                    if (closeFile(realpath(dirname, abs_path)) == -1)
+                        printf("\n<<<CLOSE FAILED DUE TO (%s)>>>\n", translate_error_code(errno));
+                    
+                }
+                else
+                    printf("\n<<<WRITE FILE ERROR>>>\n");
+                    
+            }
+            else
+            {
+                printf("\n<<<OPEN FAILED DUE TO (%s)>>>\n", translate_error_code(errno));
             }
 
             return 0;

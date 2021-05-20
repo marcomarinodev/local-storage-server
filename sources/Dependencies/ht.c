@@ -128,6 +128,7 @@ Ht_item *create_item(char *key, FRecord value, size_t file_size)
 
     item->value.is_open = value.is_open;
     item->value.is_locked = value.is_locked;
+    item->value.is_new = value.is_new;
     item->value.last_client = value.last_client;
     item->value.last_edit = value.last_edit;
     item->value.size = value.size;
@@ -356,7 +357,7 @@ int lru(HashTable *table, char *victim_pathname)
         if (table->items[i])
         {
 
-            if (difftime(oldest, table->items[i]->value.last_edit) > 0)
+            if ((difftime(oldest, table->items[i]->value.last_edit) > 0) && (table->items[i]->value.is_new == 0))
             {
                 /* found a later time than oldest */
                 oldest = table->items[i]->value.last_edit;
@@ -369,7 +370,7 @@ int lru(HashTable *table, char *victim_pathname)
                 LinkedList *head = table->overflow_buckets[i];
                 while (head)
                 {
-                    if (difftime(oldest, head->item->value.last_edit) > 0)
+                    if ((difftime(oldest, head->item->value.last_edit) > 0) && (table->overflow_buckets[i]->item->value.is_new == 0))
                     {
                         /* found a later time than oldest */
                         oldest = head->item->value.last_edit;
@@ -398,8 +399,8 @@ void print_table(HashTable *table)
         if (table->items[i])
         {
             struct tm time_format = *localtime(&table->items[i]->value.last_edit);
-            printf("Index:%d, Key:%s,\nLOCKED: %d, OPENED: %d, SIZE: %ld,\n LAST EDIT: %d/%d/%d at %d-%d-%d\n", i, table->items[i]->key,
-                   table->items[i]->value.is_locked, table->items[i]->value.is_open, table->items[i]->value.size,
+            printf("Index:%d, Key:%s,\nISNEW: %d, LOCKED: %d, OPENED: %d, SIZE: %ld,\n LAST EDIT: %d/%d/%d at %d-%d-%d\n", i, table->items[i]->key,
+                   table->items[i]->value.is_new, table->items[i]->value.is_locked, table->items[i]->value.is_open, table->items[i]->value.size,
                    1900 + time_format.tm_year, time_format.tm_mon + 1, time_format.tm_mday,
                    time_format.tm_hour, time_format.tm_min, time_format.tm_sec);
 
@@ -410,8 +411,8 @@ void print_table(HashTable *table)
                 while (head)
                 {
                     struct tm _time_format = *localtime(&head->item->value.last_edit);
-                    printf("Index:%d, Key:%s,\nLOCKED: %d, OPENED: %d, SIZE: %ld,\n LAST EDIT: %d/%d/%d at %d-%d-%d\n", i, head->item->key,
-                           head->item->value.is_locked, head->item->value.is_open, head->item->value.size,
+                    printf("Index:%d, Key:%s,\nISNEW: %d, LOCKED: %d, OPENED: %d, SIZE: %ld,\n LAST EDIT: %d/%d/%d at %d-%d-%d\n", i, head->item->key,
+                           head->item->value.is_new, head->item->value.is_locked, head->item->value.is_open, head->item->value.size,
                            1900 + _time_format.tm_year, _time_format.tm_mon + 1, _time_format.tm_mday,
                            _time_format.tm_hour, _time_format.tm_min, _time_format.tm_sec);
                     head = head->next;

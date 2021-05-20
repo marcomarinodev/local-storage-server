@@ -18,6 +18,7 @@ typedef struct _frecord
     // struct tm last_edit;
     pthread_mutex_t lock;
     int is_locked;
+    int is_new;
     int is_open;
     pid_t last_client; 
     /* data */

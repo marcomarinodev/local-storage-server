@@ -280,6 +280,7 @@ static void run_server(char *config_pathname)
 
     for (int i = 0; i < server_setup->n_workers; i++)
     {
+        printf("\n<<<Joining %d worker thread>>>\n", i);
         Pthread_join(workers_tid[i], NULL);
     }
 
@@ -360,7 +361,6 @@ static void *worker_func(void *args)
                 new.size = incoming_request.size;
                 sprintf(new.pathname, "%s", incoming_request.pathname);
 
-                printf("{{{ incoming_request.size = %ld }}}\n", incoming_request.size);
                 new.content = malloc(1 + (sizeof(char) * incoming_request.size));
                 memcpy(new.content, incoming_request.content, incoming_request.size);
 
@@ -416,32 +416,18 @@ static void *worker_func(void *args)
                 {
                     if (incoming_request.size <= storage_ht->capacity)
                     { /* case when storage can contain the file sent in request */
-                        while ((incoming_request.size + storage_ht->file_size) > storage_ht->capacity)
-                        {
-                            /* LRU handling ... */
-                            /* deleting the oldest file until the server can host the incoming file */
-                            printf("\n<<<Calling LRU>>>\n");
-
-                            char oldest_pathname[MAX_PATHNAME];
-
-                            int is_selected;
-                            if ((is_selected = lru(storage_ht, oldest_pathname)) == -1)
-                            {
-                                /* it should never happen because we know that the storage can contain the incoming file */
-                                printf("\n<<<STORAGE IS EMPTY => FILE IS TOO BIG>>>");
-                            }
-
-                            printf("\n<<<VICTIM SELECTED: %s>>>\n", oldest_pathname);
-
-                            ht_delete(storage_ht, oldest_pathname);
-                        }
 
                         pthread_mutex_init(&(new.lock), NULL);
                         new.is_open = TRUE;
                         new.is_locked = TRUE;
+                        new.is_new = TRUE;
                         new.last_client = incoming_request.calling_client;
 
                         ht_insert(storage_ht, incoming_request.pathname, new, incoming_request.size);
+                        /* decrementing the n. of elements in storage because the file needs to be filled before */
+                        /* decrementing the size of the element in storage because the file needs to be filled before */
+                        storage_ht->count--;
+                        storage_ht->file_size -= incoming_request.size;
 
                         free(new.content);
 
@@ -477,16 +463,43 @@ static void *worker_func(void *args)
             {
                 if (rec->is_open == TRUE && rec->is_locked == TRUE)
                 {
+
+                    while ((incoming_request.size + storage_ht->file_size) > storage_ht->capacity)
+                    {
+                        /* LRU handling ... */
+                        /* deleting the oldest file until the server can host the incoming file */
+                        printf("\n<<<Calling LRU>>>\n");
+
+                        char oldest_pathname[MAX_PATHNAME];
+
+                        int is_selected;
+                        if ((is_selected = lru(storage_ht, oldest_pathname)) == -1)
+                        {
+                            /* it should never happen because we know that the storage can contain the incoming file */
+                            printf("\n<<<STORAGE IS EMPTY => FILE IS TOO BIG>>>");
+                        }
+
+                        printf("\n<<<VICTIM SELECTED: %s>>>\n", oldest_pathname);
+
+                        ht_delete(storage_ht, oldest_pathname);
+                    }
+
+                    storage_ht->file_size += rec->size;
+                    /* when I really insert the file, increment the counter */
+                    storage_ht->count++;
+
                     Pthread_mutex_unlock(&storage_mutex, pthread_self(), "storage");
 
                     Pthread_mutex_lock(&(rec->lock), pthread_self(), rec->pathname);
 
                     rec->is_locked = FALSE;
+                    
                     rec->last_edit = now;
                     if (rec->content == NULL)
                         rec->content = malloc(1 + (sizeof(char) * incoming_request.size));
 
                     memcpy(rec->content, incoming_request.content, incoming_request.size);
+                    
 
                     Pthread_mutex_unlock(&(rec->lock), pthread_self(), rec->pathname);
 
@@ -603,19 +616,22 @@ static void *worker_func(void *args)
 
                     if (rec != NULL)
                     {
-                        time_t now = time(0);
+                        if (rec->value.is_locked == FALSE)
+                        {
+                            time_t now = time(0);
 
-                        rec->value.last_edit = now;
-                        response.content_size = rec->value.size;
+                            rec->value.last_edit = now;
+                            response.content_size = rec->value.size;
 
-                        printf("sizeof(rec->content) = %ld\n", rec->value.size);
+                            printf("sizeof(rec->content) = %ld\n", rec->value.size);
 
-                        strncpy(response.path, rec->key, strlen(rec->key) + 1);
-                        memcpy(response.content, rec->value.content, rec->value.size);
+                            strncpy(response.path, rec->key, strlen(rec->key) + 1);
+                            memcpy(response.content, rec->value.content, rec->value.size);
 
-                        printf("sending file...\n");
-                        writen(incoming_request.fd_cleint, &response, sizeof(response));
-                        k++;
+                            printf("sending file...\n");
+                            writen(incoming_request.fd_cleint, &response, sizeof(response));
+                            k++;
+                        }
                     }
                 }
                 else
@@ -700,6 +716,7 @@ static void *worker_func(void *args)
                         {
                             /* legal ==> closing the file */
                             rec->is_open = FALSE;
+                            rec->is_new = FALSE;
                             response.code = CLOSE_FILE_SUCCESS;
                         }
                         else
@@ -711,6 +728,7 @@ static void *worker_func(void *args)
 
                     /* second case: this file is not locked so we can close it */
                     rec->is_open = FALSE;
+                    rec->is_new = FALSE;
                     response.code = CLOSE_FILE_SUCCESS;
                 }
                 else
