@@ -138,6 +138,48 @@ int openFile(const char *pathname, int flags)
     return -1;
 }
 
+int removeFile(const char *pathname)
+{
+    ServerRequest request;
+    Response response;
+
+    /* request init */
+    memset(&request, 0, sizeof(ServerRequest));
+    request.calling_client = getpid();
+    request.cmd_type = REMOVE_FILE_REQ;
+    memset(request.pathname, 0, MAX_PATHNAME);
+    strncpy(request.pathname, pathname, strlen(pathname));
+    request.fd_cleint = 0;
+
+    printf("sending...\n");
+    writen(fd_socket, &request, sizeof(ServerRequest));
+
+    printf("receiving...\n");
+    readn(fd_socket, &response, sizeof(response));
+
+    /* response.code handling */
+    if (errno != EINTR)
+    {
+        if (response.code == REMOVE_FILE_SUCCESS)
+            return 0;
+        
+        if (response.code == FAILED_FILE_SEARCH)
+        {
+            errno = FAILED_FILE_SEARCH;
+            return -1;
+        }
+
+        if (response.code == FILE_IS_LOCKED)
+        {
+            errno = FILE_IS_LOCKED;
+            return -1;
+        }
+    }
+
+    /* errno = EINTR or some other error */
+    return -1;
+}
+
 int readFile(const char *pathname, void **buf, size_t *size)
 {
     ServerRequest request;

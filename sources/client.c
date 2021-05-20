@@ -281,7 +281,7 @@ int perform(Client_setup setup, LList *request_commands)
                         {
                             printf("\nSuccesful closing operation\n");
                         }
-                        else 
+                        else
                             printf("\n<<<CLOSE FAILED DUE TO (%s)>>>\n", translate_error_code(errno));
                     }
                     else
@@ -418,6 +418,33 @@ int perform(Client_setup setup, LList *request_commands)
 
         case 'c':
         {
+            int i = 0;
+
+            printf("ARG[0] = %s\n", request_args[0]);
+
+            while (request_args[i] != NULL)
+            {
+
+                char abs_path[MAXFILENAME];
+
+                realpath(request_args[i], abs_path);
+
+                PATH_CHECK(abs_path);
+
+                printf("\n-c command execution:\n");
+    
+                if (removeFile(abs_path) == 0)
+                {
+                    printf("\n<<<SUCCESFULLY REMOVED THE FILE>>>\n");
+                }
+                else
+                {
+                    /* error handling */
+                    printf("\n<<<ERROR WHILE REMOVING DUE TO (%s)>>>\n", translate_error_code(errno));
+                }
+
+                i++;
+            }
         }
         break;
 

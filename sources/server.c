@@ -633,17 +633,61 @@ static void *worker_func(void *args)
         }
         break;
 
+        case REMOVE_FILE_REQ:
+        {
+            Response response;
+            memset(&response, 0, sizeof(response));
+
+            Pthread_mutex_lock(&storage_mutex, incoming_request.calling_client, "storage");
+            FRecord *rec = ht_search(storage_ht, incoming_request.pathname);
+
+            if (rec != NULL)
+            {
+
+                if (rec->is_locked == TRUE)
+                {
+                    /* two cases: calling client is the client who locked */
+                    if (rec->last_client == incoming_request.calling_client)
+                    {
+                        printf("\n>>>(DEBUG) The client who's trying to remove the locked file is the client who locked the file<<<\n");
+                        printf("\n<<<REMOVING %s>>>\n", incoming_request.pathname);
+                        ht_delete(storage_ht, incoming_request.pathname);
+                        response.code = REMOVE_FILE_SUCCESS;
+                    }
+                    else
+                        response.code = FILE_IS_LOCKED;
+                }
+                else
+                {
+                    /* if it is not locked the client can remove the item */
+                    printf("\n<<<REMOVING %s>>>\n", incoming_request.pathname);
+                    ht_delete(storage_ht, incoming_request.pathname);
+                    response.code = REMOVE_FILE_SUCCESS;
+                }
+            }
+            else
+                response.code = FAILED_FILE_SEARCH;
+
+            Pthread_mutex_unlock(&storage_mutex, incoming_request.calling_client, "storage");
+
+            writen(incoming_request.fd_cleint, &response, sizeof(response));
+        }
+        break;
+
         case CLOSE_FILE_REQ:
         {
             Response response;
             memset(&response, 0, sizeof(response));
 
+            Pthread_mutex_lock(&storage_mutex, incoming_request.calling_client, "storage");
             FRecord *rec = ht_search(storage_ht, incoming_request.pathname);
 
             if (rec != NULL)
             {
+                Pthread_mutex_unlock(&storage_mutex, incoming_request.calling_client, "storage");
                 time_t now = time(0);
 
+                Pthread_mutex_lock(&(rec->lock), pthread_self(), rec->pathname);
                 if (rec->is_open == TRUE)
                 {
                     /* split in two cases */
@@ -674,9 +718,11 @@ static void *worker_func(void *args)
                     /* the file is not open, so is already closed */
                     response.code = IS_ALREADY_CLOSED;
                 }
+                Pthread_mutex_unlock(&(rec->lock), pthread_self(), rec->pathname);
             }
             else
             {
+                Pthread_mutex_lock(&storage_mutex, incoming_request.calling_client, "storage");
                 /* the file we want to close does not exist */
                 response.code = FAILED_FILE_SEARCH;
             }

@@ -38,6 +38,7 @@
 #define O_CREATE_SUCCESS 260
 #define READ_SUCCESS 240
 #define CLOSE_FILE_SUCCESS 210
+#define REMOVE_FILE_SUCCESS 220
 
 /* request codes */
 #define OPEN_FILE_REQ 10
@@ -142,10 +143,16 @@ int readFile(const char *pathname, void **buf, size_t *size);
 */
 int readNFiles(int N, const char *dirname);
 
+/**
+ * Richiesta di chiusura del file puntato da ‘pathname’. Eventuali operazioni sul file dopo la closeFile falliscono.
+ * Ritorna 0 in caso di successo, -1 in caso di fallimento, errno viene settato opportunamente. 
+*/
+int removeFile(const char *pathname);
+
 /* TODO: - IMPLEMENT THESE FUNCTIONS
 int appendToFile(const char* pathname, void* buf, size_t size, const char* dirname);
 
-int removeFile(const char* pathname);
+lock, unlock
 */
 
 long int find_size(const char *pathname);

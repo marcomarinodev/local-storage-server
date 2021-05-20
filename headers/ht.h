@@ -19,7 +19,7 @@ typedef struct _frecord
     pthread_mutex_t lock;
     int is_locked;
     int is_open;
-    pid_t last_client;
+    pid_t last_client; 
     /* data */
     char *content;
 } FRecord;
