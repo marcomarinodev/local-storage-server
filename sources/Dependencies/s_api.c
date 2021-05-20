@@ -113,13 +113,28 @@ int openFile(const char *pathname, int flags)
             return 0;
         }
 
+        if (response.code == IS_ALREADY_OPEN)
+        {
+            printf("\n<<<THE FILE IS ALREADY OPEN!>>>\n");
+            return 0;
+        }
+
+        if (response.code == FILE_IS_LOCKED)
+        {
+            printf("\n<<<YOU CANNOT OPEN THE FILE BECAUSE IT IS LOCKED>>>\n");
+            errno = FILE_IS_LOCKED;
+            return -1;
+        }
+
         if (response.code == STRG_OVERFLOW)
         {
-            printf("\n<<<STORAGE OVERFLOW>>>\n");
+            printf("\n<<<STORAGE OVERFLOW (file is too big)>>>\n");
+            errno = STRG_OVERFLOW;
             return -1;
         }
     }
 
+    /* errno = EINTR */
     return -1;
 }
 
@@ -169,8 +184,45 @@ int readFile(const char *pathname, void **buf, size_t *size)
 
 int closeFile(const char *pathname)
 {
+    Response response;
+    ServerRequest request;
 
-    return 0;
+    memset(&request, 0, sizeof(ServerRequest));
+    request.calling_client = getpid();
+    request.cmd_type = CLOSE_FILE_REQ;
+    memset(request.pathname, 0, MAX_PATHNAME);
+    strncpy(request.pathname, pathname, strlen(pathname));
+    request.flags = NO_FLAGS;
+    request.fd_cleint = 0;
+
+    writen(fd_socket, &request, sizeof(ServerRequest));
+
+    readn(fd_socket, &response, sizeof(response));
+
+    if (errno != EINTR)
+    {
+        if (response.code == CLOSE_FILE_SUCCESS)
+            return 0;
+        
+        if (response.code == IS_ALREADY_CLOSED)
+            return 0;
+
+        if (response.code == FILE_IS_LOCKED)
+        {
+            errno = response.code;
+            return -1;
+        }
+
+        if (response.code == FAILED_FILE_SEARCH)
+        {
+            errno = response.code;
+            return -1;
+        }
+    }
+
+
+    /* errno = EINTR */
+    return -1;
 }
 
 int writeFile(const char *pathname, const char *dirname)

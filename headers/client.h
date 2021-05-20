@@ -94,4 +94,6 @@ void print_setup(Client_setup setup);
 
 void print_requests(LList *request_commands);
 
+char *translate_error_code(int code);
+
 #endif

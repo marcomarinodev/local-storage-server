@@ -29,11 +29,15 @@
 #define FAILED_FILE_SEARCH 404
 #define STRG_OVERFLOW 440
 #define WRITE_FAILED 430
+#define IS_ALREADY_OPEN 420
+#define IS_ALREADY_CLOSED 450
+#define FILE_IS_LOCKED 410
 /* success codes */
 #define OPEN_SUCCESS 200
 #define WRITE_SUCCESS 230
 #define O_CREATE_SUCCESS 260
 #define READ_SUCCESS 240
+#define CLOSE_FILE_SUCCESS 210
 
 /* request codes */
 #define OPEN_FILE_REQ 10

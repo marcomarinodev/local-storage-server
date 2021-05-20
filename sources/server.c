@@ -270,7 +270,7 @@ static void run_server(char *config_pathname)
     }
 
     printf("\n<<<SIGINT RECEIVED>>>\n");
-    
+
     for (int i = 0; i < server_setup->n_workers; i++)
     {
         printf("\n<<<invio una signal su pending_request>>>\n");
@@ -374,9 +374,40 @@ static void *worker_func(void *args)
 
                     Pthread_mutex_lock(&(rec->lock), pthread_self(), rec->pathname);
 
-                    rec->is_locked = 1;
-                    rec->is_open = 1;
-                    response.code = OPEN_SUCCESS;
+                    if (rec->is_locked == FALSE)
+                    {
+                        if (rec->is_open == TRUE) /* if the file already exists and it's already open */
+                        {
+                            /* if the client that wants to open the file already open is not the client that opened the file before */
+                            if (rec->last_client != incoming_request.calling_client)
+                            {
+                                response.code = IS_ALREADY_OPEN;
+                            }
+                            else
+                                response.code = OPEN_SUCCESS;
+                        }
+                        else
+                        {
+                            rec->is_open = TRUE;
+                            response.code = OPEN_SUCCESS;
+                        }
+                    }
+                    else
+                    {
+                        /* case when the file is already locked */
+                        /* case when the client that locked this file is trying to open ig */
+                        if (rec->last_client == incoming_request.calling_client)
+                        {
+                            rec->is_open = TRUE;
+                            response.code = OPEN_SUCCESS;
+                        }
+                        else
+                        {
+                            /* file is locked by another client */
+                            response.code = FILE_IS_LOCKED;
+                        }
+                    }
+
                     free(new.content);
 
                     Pthread_mutex_unlock(&(rec->lock), pthread_self(), rec->pathname);
@@ -408,6 +439,7 @@ static void *worker_func(void *args)
                         pthread_mutex_init(&(new.lock), NULL);
                         new.is_open = TRUE;
                         new.is_locked = TRUE;
+                        new.last_client = incoming_request.calling_client;
 
                         ht_insert(storage_ht, incoming_request.pathname, new, incoming_request.size);
 
@@ -443,7 +475,7 @@ static void *worker_func(void *args)
 
             if (rec != NULL)
             {
-                if (rec->is_open == TRUE)
+                if (rec->is_open == TRUE && rec->is_locked == TRUE)
                 {
                     Pthread_mutex_unlock(&storage_mutex, pthread_self(), "storage");
 
@@ -464,6 +496,7 @@ static void *worker_func(void *args)
                 {
                     Pthread_mutex_unlock(&storage_mutex, pthread_self(), "storage");
                     /* before you do a write operation, you need to open the file */
+                    printf("\n<<<The client must open the file using O_CREATE | O_LOCK flags>>>\n");
                     response.code = WRITE_FAILED;
                 }
             }
@@ -600,6 +633,59 @@ static void *worker_func(void *args)
         }
         break;
 
+        case CLOSE_FILE_REQ:
+        {
+            Response response;
+            memset(&response, 0, sizeof(response));
+
+            FRecord *rec = ht_search(storage_ht, incoming_request.pathname);
+
+            if (rec != NULL)
+            {
+                time_t now = time(0);
+
+                if (rec->is_open == TRUE)
+                {
+                    /* split in two cases */
+                    /* first case: this file is locked */
+                    if (rec->is_locked == TRUE)
+                    {
+                        /* we have to check that the last client (the client that made the lock) */
+                        /* if the client that makes the closing request is the last client => is legal */
+                        if (rec->last_client == incoming_request.calling_client)
+                        {
+                            /* legal ==> closing the file */
+                            rec->is_open = FALSE;
+                            response.code = CLOSE_FILE_SUCCESS;
+                        }
+                        else
+                        {
+                            /* if is not the client who made the lock ==> illegal, response code is FILE_IS_LOCKED */
+                            response.code = FILE_IS_LOCKED;
+                        }
+                    }
+
+                    /* second case: this file is not locked so we can close it */
+                    rec->is_open = FALSE;
+                    response.code = CLOSE_FILE_SUCCESS;
+                }
+                else
+                {
+                    /* the file is not open, so is already closed */
+                    response.code = IS_ALREADY_CLOSED;
+                }
+            }
+            else
+            {
+                /* the file we want to close does not exist */
+                response.code = FAILED_FILE_SEARCH;
+            }
+
+            /* send the response via API */
+            writen(incoming_request.fd_cleint, &response, sizeof(response));
+        }
+
+        break;
         default:
             break;
         }

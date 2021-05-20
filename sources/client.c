@@ -281,6 +281,8 @@ int perform(Client_setup setup, LList *request_commands)
                         {
                             printf("\nSuccesful closing operation\n");
                         }
+                        else 
+                            printf("\n<<<CLOSE FAILED DUE TO (%s)>>>\n", translate_error_code(errno));
                     }
                     else
                     {
@@ -288,9 +290,7 @@ int perform(Client_setup setup, LList *request_commands)
                     }
                 }
                 else
-                {
-                    printf("OPEN FAILED\n");
-                }
+                    printf("\n<<<OPEN FAILED DUE TO (%s)>>>\n", translate_error_code(errno));
 
                 i++;
             }
@@ -704,6 +704,16 @@ int lsR(const char *dirname, int *n)
             return DIRNAME_NOT_FOLDER;
         }
     }
+}
+
+char *translate_error_code(int code)
+{
+    if (code == FAILED_FILE_SEARCH)
+        return "failed file search";
+    if (code == FILE_IS_LOCKED)
+        return "file is locked";
+
+    return "unknown error code";
 }
 
 void manage_request_option(char **opt_id, int opt, Request **_req, LList *reqs, char *_optarg)
