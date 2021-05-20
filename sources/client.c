@@ -135,7 +135,7 @@ int _getopt(LList *configs, LList *reqs, int argcount, char **_argv)
             manage_config_option(&opt_code, &opt_value, opt, configs, optarg);
             break;
         case 'D':
-            // -----------------------
+            manage_config_option(&opt_code, &opt_value, opt, configs, optarg);
             break;
         case 't':
             manage_config_option(&opt_code, &opt_value, opt, configs, optarg);
@@ -273,7 +273,7 @@ int perform(Client_setup setup, LList *request_commands)
 
                 if (open_res == 0)
                 {
-                    if (writeFile(abs_path, NULL) == 0)
+                    if (writeFile(abs_path, c_setup.ejected_buffer) == 0)
                     {
                         printf("\nSuccessful write operation \n");
                         printf("\nclosing the file...\n");
@@ -476,6 +476,7 @@ Client_setup apply_setup(LList config_commands)
 
     curr_setup.socket_pathname = NULL;
     curr_setup.dirname_buffer = NULL;
+    curr_setup.ejected_buffer = NULL;
     curr_setup.req_time_interval = 0;
     curr_setup.op_log = 0;
 
@@ -504,6 +505,11 @@ Client_setup apply_setup(LList config_commands)
     if (LL_contains_key(config_commands, "d") == TRUE)
     {
         curr_setup.dirname_buffer = (char *)LL_get_by_key(config_commands, "d");
+    }
+
+    if (LL_contains_key(config_commands, "D") == TRUE)
+    {
+        curr_setup.ejected_buffer = (char *)LL_get_by_key(config_commands, "D");
     }
 
     return curr_setup;
@@ -561,6 +567,16 @@ int validate(LList configs, LList requests)
         if (!(LL_contains_key(requests, "r") || LL_contains_key(requests, "R")))
         {
             fprintf(stderr, "L'opzione -d non puo' essere usata senza -r o -R.\n");
+            return INCONSISTENT_INPUT_ERROR;
+        }
+    }
+
+    /* -D needs -W or -w */
+    if (LL_contains_key(requests, "D") == TRUE)
+    {
+        if (!(LL_contains_key(requests, "w") || LL_contains_key(requests, "W")))
+        {
+            fprintf(stderr, "L'opzione -D non puo' essere usata senza -w o -W.\n");
             return INCONSISTENT_INPUT_ERROR;
         }
     }
@@ -720,7 +736,7 @@ int lsR(const char *dirname, int *n)
             if (open_res == 0)
             {
 
-                if (writeFile(realpath(dirname, abs_path), NULL) == 0)
+                if (writeFile(realpath(dirname, abs_path), c_setup.ejected_buffer) == 0)
                 {
                     (*n)--;
                     if (closeFile(realpath(dirname, abs_path)) == -1)

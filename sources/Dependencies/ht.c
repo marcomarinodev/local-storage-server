@@ -129,6 +129,7 @@ Ht_item *create_item(char *key, FRecord value, size_t file_size)
     item->value.is_open = value.is_open;
     item->value.is_locked = value.is_locked;
     item->value.is_new = value.is_new;
+    item->value.is_victim = value.is_victim;
     item->value.last_client = value.last_client;
     item->value.last_edit = value.last_edit;
     item->value.size = value.size;
@@ -357,7 +358,7 @@ int lru(HashTable *table, char *victim_pathname)
         if (table->items[i])
         {
 
-            if ((difftime(oldest, table->items[i]->value.last_edit) > 0) && (table->items[i]->value.is_new == 0))
+            if ((difftime(oldest, table->items[i]->value.last_edit) > 0) && (table->items[i]->value.is_new == 0) && (table->items[i]->value.is_victim == 0))
             {
                 /* found a later time than oldest */
                 oldest = table->items[i]->value.last_edit;
@@ -370,7 +371,7 @@ int lru(HashTable *table, char *victim_pathname)
                 LinkedList *head = table->overflow_buckets[i];
                 while (head)
                 {
-                    if ((difftime(oldest, head->item->value.last_edit) > 0) && (table->overflow_buckets[i]->item->value.is_new == 0))
+                    if ((difftime(oldest, head->item->value.last_edit) > 0) && (table->overflow_buckets[i]->item->value.is_new == 0) && (table->overflow_buckets[i]->item->value.is_victim == 0))
                     {
                         /* found a later time than oldest */
                         oldest = head->item->value.last_edit;

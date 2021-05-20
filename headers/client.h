@@ -52,6 +52,7 @@ typedef struct client_setup
 {
     char *socket_pathname;
     char *dirname_buffer;
+    char *ejected_buffer;
     int req_time_interval;
     int op_log;
 } Client_setup;

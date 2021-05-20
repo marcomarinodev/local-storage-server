@@ -306,7 +306,27 @@ int writeFile(const char *pathname, const char *dirname)
         return -1;
     }
 
+    /* put the n_to_eject inside response.code */
     readn(fd_socket, &response, sizeof(response));
+
+    int n_ejected = response.code;
+    printf("\n>>>Ejected files: %d<<<\n", response.code);
+    Response ejectedFiles[response.code];
+
+    /* expecting response.code files to be ejected */
+    for (int i = 0; i < n_ejected; i++)
+    {
+        readn(fd_socket, &ejectedFiles[i], sizeof(ejectedFiles[i]));
+    }
+
+    readn(fd_socket, &response, sizeof(response));
+    printf("\n>>>Reading the final response<<<\n");
+
+    /* put ejected files into dirname if it's specified */
+    if (dirname != NULL)
+    {
+        printf("\n<<<Inserted %d files in dirname>>>\n", n_ejected);
+    }
 
     if (response.code == WRITE_SUCCESS)
         return 0;

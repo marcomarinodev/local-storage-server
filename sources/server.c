@@ -232,7 +232,7 @@ static void run_server(char *config_pathname)
                         // memset
                         memset(&request, 0, sizeof(request));
                         // parsing
-                        int n_read = read(fd, &request, sizeof(ServerRequest));
+                        int n_read = readn(fd, &request, sizeof(ServerRequest));
 
                         if (n_read == 0)
                         {
@@ -421,6 +421,7 @@ static void *worker_func(void *args)
                         new.is_open = TRUE;
                         new.is_locked = TRUE;
                         new.is_new = TRUE;
+                        new.is_victim = FALSE;
                         new.last_client = incoming_request.calling_client;
 
                         ht_insert(storage_ht, incoming_request.pathname, new, incoming_request.size);
@@ -463,25 +464,72 @@ static void *worker_func(void *args)
             {
                 if (rec->is_open == TRUE && rec->is_locked == TRUE)
                 {
+                    size_t sim_storage_size = storage_ht->file_size;
+                    int n_to_eject = 0;
 
-                    while ((incoming_request.size + storage_ht->file_size) > storage_ht->capacity)
+                    /* making a cycle to determine how many files need to be ejected
+                       to make space for the new file */
+                    while ((incoming_request.size + sim_storage_size) > storage_ht->capacity)
                     {
-                        /* LRU handling ... */
-                        /* deleting the oldest file until the server can host the incoming file */
-                        printf("\n<<<Calling LRU>>>\n");
+                        char oldest_path[MAX_PATHNAME];
 
-                        char oldest_pathname[MAX_PATHNAME];
-
-                        int is_selected;
-                        if ((is_selected = lru(storage_ht, oldest_pathname)) == -1)
-                        {
-                            /* it should never happen because we know that the storage can contain the incoming file */
+                        if (lru(storage_ht, oldest_path) == -1)
                             printf("\n<<<STORAGE IS EMPTY => FILE IS TOO BIG>>>");
+
+                        printf("\n>>>victim selected: %s<<<\n", oldest_path);
+
+                        FRecord *victim = ht_search(storage_ht, oldest_path);
+
+                        victim->is_victim = TRUE;
+
+                        printf("\n>>>sim actual storage size = %ld<<<\n", sim_storage_size);
+                        sim_storage_size -= victim->size;
+                        n_to_eject++;
+                    }
+
+                    /* use response.code as n_to_eject */
+                    response.code = n_to_eject;
+                    writen(incoming_request.fd_cleint, &response, sizeof(response));
+
+                    /* now the server knows how many files need to be ejected */
+                    /* so at the end of a single cycle a writen will be made in order to
+                     * send the ejected file
+                    */
+
+                    int k = n_to_eject;
+                    for (int i = 0; i < storage_ht->size; i++)
+                    {
+                        if (k == 0)
+                            break;
+
+                        Response file_response;
+                        memset(&file_response, 0, sizeof(file_response));
+
+                        response.code = READ_SUCCESS;
+                        Ht_item *rec = storage_ht->items[i];
+
+                        if (rec != NULL)
+                        {
+                            if (rec->value.is_locked == FALSE && rec->value.is_victim == TRUE)
+                            {
+                                printf(">>>I found what I have to delete<<<\n");
+                                time_t now = time(0);
+
+                                file_response.content_size = rec->value.size;
+
+                                printf("sizeof(rec->content) = %ld\n", rec->value.size);
+
+                                strncpy(file_response.path, rec->key, strlen(rec->key) + 1);
+                                memcpy(file_response.content, rec->value.content, rec->value.size);
+
+                                printf("sending file...\n");
+                                writen(incoming_request.fd_cleint, &file_response, sizeof(file_response));
+                            
+                                ht_delete(storage_ht, rec->key);
+
+                                k--;
+                            }
                         }
-
-                        printf("\n<<<VICTIM SELECTED: %s>>>\n", oldest_pathname);
-
-                        ht_delete(storage_ht, oldest_pathname);
                     }
 
                     storage_ht->file_size += rec->size;
@@ -493,13 +541,12 @@ static void *worker_func(void *args)
                     Pthread_mutex_lock(&(rec->lock), pthread_self(), rec->pathname);
 
                     rec->is_locked = FALSE;
-                    
+
                     rec->last_edit = now;
                     if (rec->content == NULL)
                         rec->content = malloc(1 + (sizeof(char) * incoming_request.size));
 
                     memcpy(rec->content, incoming_request.content, incoming_request.size);
-                    
 
                     Pthread_mutex_unlock(&(rec->lock), pthread_self(), rec->pathname);
 
@@ -522,6 +569,7 @@ static void *worker_func(void *args)
             }
 
             printf("writing to fd: %d\n", incoming_request.fd_cleint);
+
             writen(incoming_request.fd_cleint, &response, sizeof(response));
         }
         break;
