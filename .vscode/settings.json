@@ -1,0 +1,18 @@
+{
+    "files.associations": {
+        "stdlib.h": "c",
+        "types.h": "c",
+        "arg_parser.h": "c",
+        "dlinked_list.h": "c",
+        "stdio.h": "c",
+        "client.h": "c",
+        "istream": "c",
+        "ostream": "c",
+        "array": "c",
+        "functional": "c",
+        "tuple": "c",
+        "type_traits": "c",
+        "utility": "c"
+    },
+    "C_Cpp.dimInactiveRegions": false
+}

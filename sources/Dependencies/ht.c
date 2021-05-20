@@ -65,6 +65,8 @@ Ht_item *linkedlist_remove(LinkedList *list)
     Ht_item *it = NULL;
     memcpy(temp->item, it, sizeof(Ht_item));
     free(temp->item->key);
+    if (temp->item->value.content != NULL)
+        free(temp->item->value.content);
     free(&(temp->item->value));
     free(temp->item);
     free(temp);
@@ -155,7 +157,7 @@ HashTable *create_table(int size, size_t capacity)
 void free_item(Ht_item *item)
 {
     // Frees an item
-    // free(item->key);
+    free(item->key);
     if (item->value.content != NULL)
         free(item->value.content);
     free(item);
@@ -347,7 +349,7 @@ int lru(HashTable *table, char *victim_pathname)
         return -1;
 
     /* most recent time */
-    time_t oldest = time(0);
+    time_t oldest = time(NULL) + 1;
 
     for (int i = 0; i < table->size; i++)
     {

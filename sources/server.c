@@ -12,6 +12,7 @@ pthread_mutex_t storage_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /* Workers TID */
 pthread_t *workers_tid;
+pthread_attr_t *attributes;
 
 /* SERVER SOCKET FILE DESCRIPTOR */
 int fd_socket;
@@ -20,13 +21,141 @@ int fd_socket;
 fd_set set;
 pthread_mutex_t descriptors_set = PTHREAD_MUTEX_INITIALIZER;
 
+/* SIGNAL HANDLING */
+int ending_all = 0;
+int pfd[2];
+
 int main(int argc, char *argv[])
 {
     check_argc(argc);
 
+    /* signal handling */
+    sigset_t mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGINT);
+    sigaddset(&mask, SIGQUIT);
+    sigaddset(&mask, SIGHUP);
+
+    if (pthread_sigmask(SIG_BLOCK, &mask, NULL) != 0)
+    {
+        fprintf(stderr, "\n<<<FATAL ERROR>>>\n");
+        abort();
+    }
+
+    /* sigpipe ignore */
+    struct sigaction s;
+    memset(&s, 0, sizeof(s));
+    s.sa_handler = SIG_IGN;
+
+    if ((sigaction(SIGPIPE, &s, NULL)) == -1)
+    {
+        perror("<<<sigaction>>>");
+        abort();
+    }
+
+    /* initialize the pipe in order to "unlock" the select
+     * in case of SIGINT, SIGHUP, SIGQUIT
+    */
+    if (pipe(pfd) == -1)
+    {
+        perror("\n<<<PIPE CREATION ERROR>>>\n");
+        exit(EXIT_FAILURE);
+    }
+
+    /* thread to handle signals */
+    pthread_t sighandler_thread;
+
+    Pthread_create(&sighandler_thread, NULL, sigHandler, &mask);
+
     run_server(argv[1]);
 
+    /* waiting signal handler thread */
+    printf("\n<<<Joining the signal thread>>>\n");
+    /* clean data structures */
+    Pthread_join(sighandler_thread, NULL);
+
     return 0;
+}
+
+static void *sigHandler(void *arg)
+{
+    sigset_t *set = (sigset_t *)arg;
+
+    for (;;)
+    {
+        int sig;
+        int r = sigwait(set, &sig);
+        if (r != 0)
+        {
+            errno = r;
+            perror("\n<<<FATAL ERROR 'sigwaitì>>>\n");
+            return NULL;
+        }
+
+        switch (sig)
+        {
+        case SIGINT:
+            ending_all = 1;
+
+            close(pfd[1]);
+            return NULL;
+            break;
+        case SIGQUIT:
+            break;
+        case SIGHUP:
+            break;
+        default:
+            break;
+        }
+    }
+
+    return NULL;
+}
+
+void spawn_thread(int index)
+{
+
+    sigset_t mask, oldmask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGINT);
+    sigaddset(&mask, SIGQUIT);
+    sigaddset(&mask, SIGHUP);
+
+    if (pthread_sigmask(SIG_BLOCK, &mask, &oldmask) != 0)
+    {
+        fprintf(stderr, "\n<<<FATAL ERROR>>>\n");
+        close(fd_socket);
+        return;
+    }
+
+    if (pthread_attr_init(&attributes[index]) != 0)
+    {
+        fprintf(stderr, "pthread_attr_init FALLITA\n");
+        close(fd_socket);
+        return;
+    }
+
+    /* detached mode */
+    if (pthread_attr_setdetachstate(&attributes[index], PTHREAD_CREATE_JOINABLE) != 0)
+    {
+        fprintf(stderr, "pthread_attr_setdetachstate FALLITA\n");
+        pthread_attr_destroy(&attributes[index]);
+        close(fd_socket);
+        return;
+    }
+    if (pthread_create(&workers_tid[index], &attributes[index], &worker_func, NULL) != 0)
+    {
+        fprintf(stderr, "pthread_create FALLITA");
+        pthread_attr_destroy(&attributes[index]);
+        close(fd_socket);
+        return;
+    }
+
+    if (pthread_sigmask(SIG_SETMASK, &oldmask, NULL) != 0)
+    {
+        fprintf(stderr, "FATAL ERROR\n");
+        close(fd_socket);
+    }
 }
 
 static void run_server(char *config_pathname)
@@ -48,11 +177,19 @@ static void run_server(char *config_pathname)
     fd_socket = socket(AF_UNIX, SOCK_STREAM, 0);
     bind(fd_socket, (struct sockaddr *)&sa, sizeof(sa));
     listen(fd_socket, SOMAXCONN);
-    /* mantengo il massimo indice di descrittore attivo in fd_num */
+
+    /* max active fd is fd_num */
     if (fd_socket > fd_num)
         fd_num = fd_socket;
+
     FD_ZERO(&set);
     FD_SET(fd_socket, &set);
+    /* register the read endpoint descriptor of the pipe */
+    FD_SET(pfd[0], &set);
+
+    /* update fd_num */
+    if (pfd[0] > fd_num)
+        fd_num = pfd[0];
 
     // INIT
     pending_requests = createQueue(sizeof(ServerRequest));
@@ -61,13 +198,14 @@ static void run_server(char *config_pathname)
     storage_ht = create_table(1 + (server_setup->max_files_instorage / 2), server_setup->max_storage);
 
     workers_tid = (pthread_t *)malloc(sizeof(pthread_t) * server_setup->n_workers);
-    for (int i = 0; i < server_setup->n_workers; i++)
-    {
-        Pthread_create(&workers_tid[i], NULL, &worker_func, NULL);
-    }
+    attributes = (pthread_attr_t *)malloc(sizeof(pthread_attr_t) * server_setup->n_workers);
 
-    while (1)
+    for (int i = 0; i < server_setup->n_workers; i++)
+        spawn_thread(i);
+
+    while (!ending_all)
     {
+        printf("\n<<<inside select>>>\n");
         rdset = set; /* preparo maschera per select */
         if (select(fd_num + 1, &rdset, NULL, NULL, NULL) == -1)
         { /* gest errore */
@@ -130,6 +268,33 @@ static void run_server(char *config_pathname)
             }
         }
     }
+
+    printf("\n<<<SIGINT RECEIVED>>>\n");
+    
+    for (int i = 0; i < server_setup->n_workers; i++)
+    {
+        printf("\n<<<invio una signal su pending_request>>>\n");
+        Pthread_cond_signal(&pending_requests_cond);
+        sleep(1);
+    }
+
+    for (int i = 0; i < server_setup->n_workers; i++)
+    {
+        Pthread_join(workers_tid[i], NULL);
+    }
+
+    for (int i = 0; i < 4; i++)
+    {
+        printf("\n<<<Freeing config_info row no.%d>>>\n", i);
+        free(server_setup->config_info[i]);
+    }
+
+    free(server_setup->config_info);
+    free(workers_tid);
+    free(attributes);
+    free(server_setup);
+    destroyQueue(pending_requests);
+    free_table(storage_ht);
 }
 
 void check_argc(int argc)
@@ -141,23 +306,30 @@ void check_argc(int argc)
     }
 }
 
-void *worker_func(void *args)
+static void *worker_func(void *args)
 {
     /* in this function the server will parse the client request */
 
     /* worker will read the request from fd_client */
 
     ServerRequest incoming_request;
-    memset(&incoming_request, 0, sizeof(ServerRequest));
+    // memset(&incoming_request, 0, sizeof(ServerRequest));
 
     printf("--- thread %ld attivo ---\n", pthread_self());
 
-    while (1)
+    while (!ending_all)
     {
         Pthread_mutex_lock(&pending_requests_mutex, pthread_self(), "requests queue");
 
-        while (isEmpty(pending_requests) == 1)
+        if (isEmpty(pending_requests) == 1)
             Pthread_cond_wait(&pending_requests_cond, &pending_requests_mutex);
+
+        if (ending_all == 1)
+        {
+            printf("\n<<<closing worker>>>\n");
+            Pthread_mutex_unlock(&pending_requests_mutex, pthread_self(), "requests queue");
+            pthread_exit(NULL);
+        }
 
         dequeue(pending_requests, &incoming_request);
 
@@ -183,7 +355,7 @@ void *worker_func(void *args)
                 new.is_locked = 0;
                 new.is_open = 1;
                 new.last_client = incoming_request.calling_client;
-                
+
                 new.last_edit = now;
                 new.size = incoming_request.size;
                 sprintf(new.pathname, "%s", incoming_request.pathname);
@@ -191,7 +363,6 @@ void *worker_func(void *args)
                 printf("{{{ incoming_request.size = %ld }}}\n", incoming_request.size);
                 new.content = malloc(1 + (sizeof(char) * incoming_request.size));
                 memcpy(new.content, incoming_request.content, incoming_request.size);
-                
 
                 Pthread_mutex_lock(&storage_mutex, pthread_self(), "storage");
 
@@ -241,11 +412,12 @@ void *worker_func(void *args)
                         ht_insert(storage_ht, incoming_request.pathname, new, incoming_request.size);
 
                         free(new.content);
-                        
+
                         response.code = O_CREATE_SUCCESS;
                     }
                     else
                     {
+                        free(new.content);
                         response.code = STRG_OVERFLOW;
                         printf("\n<<<STORAGE IS EMPTY => FILE IS TOO BIG>>>");
                     }
@@ -281,7 +453,7 @@ void *worker_func(void *args)
                     rec->last_edit = now;
                     if (rec->content == NULL)
                         rec->content = malloc(1 + (sizeof(char) * incoming_request.size));
-                    
+
                     memcpy(rec->content, incoming_request.content, incoming_request.size);
 
                     Pthread_mutex_unlock(&(rec->lock), pthread_self(), rec->pathname);
@@ -434,9 +606,9 @@ void *worker_func(void *args)
 
         print_table(storage_ht);
 
-        Pthread_mutex_lock(&descriptors_set, pthread_self(), "descriptors set");
-        FD_SET(incoming_request.fd_cleint, &set);
-        Pthread_mutex_unlock(&descriptors_set, pthread_self(), "descriptors set");
+        // Pthread_mutex_lock(&descriptors_set, pthread_self(), "descriptors set");
+        // FD_SET(incoming_request.fd_cleint, &set);
+        // Pthread_mutex_unlock(&descriptors_set, pthread_self(), "descriptors set");
     }
 
     return NULL;

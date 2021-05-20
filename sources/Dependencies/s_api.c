@@ -97,24 +97,27 @@ int openFile(const char *pathname, int flags)
         return -1;
     }
 
-    readn(fd_socket, &response, sizeof(response));
+    int read_op = readn(fd_socket, &response, sizeof(response));
 
-    if (response.code == OPEN_SUCCESS)
+    if (errno != EINTR)
     {
-        printf("\n<<<OPEN_SUCCESS>>>\n");
-        return 0;
-    }
+        if (response.code == OPEN_SUCCESS)
+        {
+            printf("\n<<<OPEN_SUCCESS>>>\n");
+            return 0;
+        }
 
-    if (response.code == O_CREATE_SUCCESS)
-    {
-        printf("\n<<<OPEN (O_CREATE) SUCCESS>>>\n");
-        return 0;
-    }
+        if (response.code == O_CREATE_SUCCESS)
+        {
+            printf("\n<<<OPEN (O_CREATE) SUCCESS>>>\n");
+            return 0;
+        }
 
-    if (response.code == STRG_OVERFLOW)
-    {
-        printf("\n<<<STORAGE OVERFLOW>>>\n");
-        return -1;
+        if (response.code == STRG_OVERFLOW)
+        {
+            printf("\n<<<STORAGE OVERFLOW>>>\n");
+            return -1;
+        }
     }
 
     return -1;
