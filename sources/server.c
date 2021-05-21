@@ -477,30 +477,9 @@ static void *worker_func(void *args)
             {
                 if (rec->is_open == TRUE && rec->is_locked == TRUE)
                 {
-                    size_t sim_storage_size = storage_ht->file_size;
-                    int n_to_eject = 0;
-
-                    /* making a cycle to determine how many files need to be ejected
-                       to make space for the new file */
-                    while ((incoming_request.size + sim_storage_size) > storage_ht->capacity)
-                    {
-                        char oldest_path[MAX_PATHNAME];
-
-                        if (lru(storage_ht, oldest_path) == -1)
-                            printf("\n<<<STORAGE IS EMPTY => FILE IS TOO BIG>>>");
-
-                        printf("\n>>>victim selected: %s<<<\n", oldest_path);
-
-                        FRecord *victim = ht_search(storage_ht, oldest_path);
-
-                        victim->is_victim = TRUE;
-
-                        printf("\n>>>sim actual storage size = %ld<<<\n", sim_storage_size);
-                        sim_storage_size -= victim->size;
-                        n_to_eject++;
-                    }
-
                     /* use response.code as n_to_eject */
+                    // response.code = n_to_eject;
+                    int n_to_eject = select_lru_victims(incoming_request.size);
                     response.code = n_to_eject;
                     writen(incoming_request.fd_cleint, &response, sizeof(response));
 
@@ -825,6 +804,34 @@ static void *worker_func(void *args)
     return NULL;
 }
 
+int select_lru_victims(size_t incoming_req_size)
+{
+    size_t sim_storage_size = storage_ht->file_size;
+    int n_to_eject = 0;
+
+    /* making a cycle to determine how many files need to be ejected
+                       to make space for the new file */
+    while ((incoming_req_size + sim_storage_size) > storage_ht->capacity)
+    {
+        char oldest_path[MAX_PATHNAME];
+
+        if (lru(storage_ht, oldest_path) == -1)
+            printf("\n<<<STORAGE IS EMPTY => FILE IS TOO BIG>>>");
+
+        printf("\n>>>victim selected: %s<<<\n", oldest_path);
+
+        FRecord *victim = ht_search(storage_ht, oldest_path);
+
+        victim->is_victim = TRUE;
+
+        printf("\n>>>sim actual storage size = %ld<<<\n", sim_storage_size);
+        sim_storage_size -= victim->size;
+        n_to_eject++;
+    }
+
+    return n_to_eject;
+}
+
 void clean_all(pthread_t **workers_tid, int *fd_socket, int *fd_client)
 {
     destroyQueue(pending_requests);
@@ -877,6 +884,8 @@ char *cmd_type_to_string(int cmd_code)
         return "REMOVE";
     if (cmd_code == 18)
         return "READN";
+    if (cmd_code == 19)
+        return "CLOSECONN";
 
     return "UNKNOWN COMMAND";
 }

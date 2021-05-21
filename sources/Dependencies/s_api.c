@@ -55,7 +55,6 @@ int closeConnection(const char *sockname)
 
     close(fd_socket);
 
-
     return response.code;
 }
 
@@ -370,6 +369,12 @@ int writeFile(const char *pathname, const char *dirname)
     if (response.code == WRITE_SUCCESS)
         return 0;
 
+    return -1;
+}
+
+int appendToFile(const char *pathname, void *buf, size_t size, const char *dirname)
+{
+    
     return -1;
 }
 

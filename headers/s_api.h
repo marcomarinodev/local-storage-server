@@ -167,9 +167,13 @@ int lockFile(const char *pathname);
 */
 int unlockFile(const char *pathname);
 
-/* TODO: - IMPLEMENT THESE FUNCTIONS
-int appendToFile(const char* pathname, void* buf, size_t size, const char* dirname);
+/**
+ * Richiesta di scrivere in append al file ‘pathname‘ i ‘size‘ bytes contenuti nel buffer ‘buf’. L’operazione di append
+ * nel file è garantita essere atomica dal file server. Se ‘dirname’ è diverso da NULL, il file eventualmente spedito
+ * dal server perchè espulso dalla cache per far posto ai nuovi dati di ‘pathname’ dovrà essere scritto in ‘dirname’;
+ * Ritorna 0 in caso di successo, -1 in caso di fallimento, errno viene settato opportunamente.
 */
+int appendToFile(const char *pathname, void *buf, size_t size, const char *dirname);
 
 long int find_size(const char *pathname);
 

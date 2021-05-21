@@ -60,6 +60,8 @@ static void run_server(char *config_pathname);
 
 static void *worker_func(void *args);
 
+int select_lru_victims(size_t incoming_req_size);
+
 void save_setup(Server_setup **setup);
 
 void clean_all(pthread_t **workers_tid, int *fd_socket, int *fd_client);
