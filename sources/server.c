@@ -22,7 +22,7 @@ fd_set set;
 pthread_mutex_t descriptors_set = PTHREAD_MUTEX_INITIALIZER;
 
 /* SIGNAL HANDLING */
-int ending_all = 0;
+volatile int ending_all = 0;
 int pfd[2];
 
 int main(int argc, char *argv[])
@@ -203,11 +203,17 @@ static void run_server(char *config_pathname)
     for (int i = 0; i < server_setup->n_workers; i++)
         spawn_thread(i);
 
+    printf("\n<<<Listen to requests>>>\n");
     while (!ending_all)
     {
-        printf("\n<<<inside select>>>\n");
+        // printf("\n<<<inside select>>>\n");
         rdset = set; /* preparo maschera per select */
-        if (select(fd_num + 1, &rdset, NULL, NULL, NULL) == -1)
+
+        struct timeval timeout;
+        timeout.tv_sec = 0;
+        timeout.tv_usec = 1;
+
+        if (select(fd_num + 1, &rdset, NULL, NULL, &timeout) == -1)
         { /* gest errore */
             perror("select");
             exit(EXIT_FAILURE);
@@ -524,7 +530,7 @@ static void *worker_func(void *args)
 
                                 printf("sending file...\n");
                                 writen(incoming_request.fd_cleint, &file_response, sizeof(file_response));
-                            
+
                                 ht_delete(storage_ht, rec->key);
 
                                 k--;
@@ -804,9 +810,9 @@ static void *worker_func(void *args)
 
         print_table(storage_ht);
 
-        // Pthread_mutex_lock(&descriptors_set, pthread_self(), "descriptors set");
-        // FD_SET(incoming_request.fd_cleint, &set);
-        // Pthread_mutex_unlock(&descriptors_set, pthread_self(), "descriptors set");
+        Pthread_mutex_lock(&descriptors_set, pthread_self(), "descriptors set");
+        FD_SET(incoming_request.fd_cleint, &set);
+        Pthread_mutex_unlock(&descriptors_set, pthread_self(), "descriptors set");
     }
 
     return NULL;
