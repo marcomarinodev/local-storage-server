@@ -42,8 +42,21 @@ int openConnection(const char *sockname, int msec, const struct timespec abstime
 
 int closeConnection(const char *sockname)
 {
-    printf("(%d) - Closing connection at '%s'\n", getpid(), sockname);
-    return close(fd_socket);
+    Response response;
+    ServerRequest request;
+
+    memset(&request, 0, sizeof(request));
+
+    request.cmd_type = CLOSECONN;
+
+    writen(fd_socket, &request, sizeof(request));
+
+    readn(fd_socket, &response, sizeof(response));
+
+    close(fd_socket);
+
+
+    return response.code;
 }
 
 int openFile(const char *pathname, int flags)

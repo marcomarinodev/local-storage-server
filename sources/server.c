@@ -252,10 +252,17 @@ static void run_server(char *config_pathname)
                             printf(" --- INCOMING REQUEST ---\n");
                             print_parsed_request(request);
 
-                            if (request.cmd_type == CMD_EOF)
+                            if (request.cmd_type == CLOSECONN)
                             { /* EOF client finito */
                                 FD_CLR(fd, &set);
                                 //  fd_num = aggiorna(&set);
+
+                                Response resp;
+                                memset(&resp, 0, sizeof(resp));
+                                resp.code = CLOSECONN_SUCCESS;
+
+                                writen(fd, &resp, sizeof(resp));
+
                                 close(fd);
                             }
                             else

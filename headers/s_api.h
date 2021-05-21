@@ -39,6 +39,7 @@
 #define READ_SUCCESS 240
 #define CLOSE_FILE_SUCCESS 210
 #define REMOVE_FILE_SUCCESS 220
+#define CLOSECONN_SUCCESS 270
 
 /* request codes */
 #define OPEN_FILE_REQ 10
@@ -50,6 +51,7 @@
 #define CLOSE_FILE_REQ 16
 #define REMOVE_FILE_REQ 17
 #define READN_FILE_REQ 18
+#define CLOSECONN 19
 
 #define SYSCALL(r, c, e) \
     if ((r = c) == -1)   \
