@@ -42,20 +42,9 @@ int openConnection(const char *sockname, int msec, const struct timespec abstime
 
 int closeConnection(const char *sockname)
 {
-    Response response;
-    ServerRequest request;
-
-    memset(&request, 0, sizeof(request));
-
-    request.cmd_type = CLOSECONN;
-
-    writen(fd_socket, &request, sizeof(request));
-
-    readn(fd_socket, &response, sizeof(response));
-
     close(fd_socket);
 
-    return response.code;
+    return 0;
 }
 
 int openFile(const char *pathname, int flags)
@@ -135,6 +124,13 @@ int openFile(const char *pathname, int flags)
         {
             printf("\n<<<YOU CANNOT OPEN THE FILE BECAUSE IT IS LOCKED>>>\n");
             errno = FILE_IS_LOCKED;
+            return -1;
+        }
+
+        if (response.code == FILE_ALREADY_EXISTS)
+        {
+            printf("\n>>>FILE ALREADY EXISTS<<<\n");
+            errno = FILE_ALREADY_EXISTS;
             return -1;
         }
 
@@ -322,47 +318,51 @@ int writeFile(const char *pathname, const char *dirname)
 
     int n_ejected = response.code;
     printf("\n>>>Ejected files: %d<<<\n", response.code);
-    Response ejectedFiles[n_ejected];
 
-    /* expecting response.code files to be ejected */
-    for (int i = 0; i < n_ejected; i++)
+    if (n_ejected == 0)
     {
-        readn(fd_socket, &ejectedFiles[i], sizeof(ejectedFiles[i]));
-    }
+        Response ejectedFiles[n_ejected];
 
-    readn(fd_socket, &response, sizeof(response));
-    printf("\n>>>Reading the final response<<<\n");
-
-    /* put ejected files into dirname if it's specified */
-    if (dirname != NULL)
-    {
+        /* expecting response.code files to be ejected */
         for (int i = 0; i < n_ejected; i++)
         {
-            char filename[MAX_PATHNAME];
-            char abs_path_copy[MAX_PATHNAME];
-            char *token;
-            strncpy(abs_path_copy, ejectedFiles[i].path, strlen(ejectedFiles[i].path) + 1);
+            readn(fd_socket, &ejectedFiles[i], sizeof(ejectedFiles[i]));
+        }
 
-            token = strtok(abs_path_copy, "/");
+        readn(fd_socket, &response, sizeof(response));
+        printf("\n>>>Reading the final response<<<\n");
 
-            while (token != NULL)
+        /* put ejected files into dirname if it's specified */
+        if (dirname != NULL)
+        {
+            for (int i = 0; i < n_ejected; i++)
             {
-                sprintf(filename, "%s", token);
-                token = strtok(NULL, "/");
+                char filename[MAX_PATHNAME];
+                char abs_path_copy[MAX_PATHNAME];
+                char *token;
+                strncpy(abs_path_copy, ejectedFiles[i].path, strlen(ejectedFiles[i].path) + 1);
+
+                token = strtok(abs_path_copy, "/");
+
+                while (token != NULL)
+                {
+                    sprintf(filename, "%s", token);
+                    token = strtok(NULL, "/");
+                }
+
+                char dir_abs_path[MAX_PATHNAME];
+
+                realpath(dirname, dir_abs_path);
+
+                strcat(dir_abs_path, "/");
+                strcat(dir_abs_path, filename);
+
+                int fd = open(dir_abs_path, (O_RDWR | O_CREAT));
+
+                write(fd, ejectedFiles[i].content, ejectedFiles[i].content_size * sizeof(char));
+
+                close(fd);
             }
-
-            char dir_abs_path[MAX_PATHNAME];
-
-            realpath(dirname, dir_abs_path);
-
-            strcat(dir_abs_path, "/");
-            strcat(dir_abs_path, filename);
-
-            int fd = open(dir_abs_path, (O_RDWR | O_CREAT));
-
-            write(fd, ejectedFiles[i].content, ejectedFiles[i].content_size * sizeof(char));
-
-            close(fd);
         }
     }
 
@@ -374,7 +374,83 @@ int writeFile(const char *pathname, const char *dirname)
 
 int appendToFile(const char *pathname, void *buf, size_t size, const char *dirname)
 {
-    
+    /* sends the size with request.size = size */
+    ServerRequest request;
+    Response response;
+
+    /* Clear node struct to suppress valgrind warnings */
+    memset(&request, 0, sizeof(ServerRequest));
+    request.calling_client = getpid();
+    request.cmd_type = APPEND_FILE_REQ;
+    memset(request.pathname, 0, MAX_PATHNAME);
+    strncpy(request.pathname, pathname, strlen(pathname));
+    request.size = size;
+    memset(request.content, 0, MAX_CHARACTERS);
+    memcpy(request.content, buf, size);
+
+    int sending_err = 0;
+
+    printf("sending...\n");
+    if ((sending_err = writen(fd_socket, &request, sizeof(ServerRequest))) == -1)
+    {
+        printf("(%d) - socket request write error\n", getpid());
+        return -1;
+    }
+
+    /* put the n_to_eject inside response.code */
+    readn(fd_socket, &response, sizeof(response));
+
+    int n_ejected = response.code;
+    printf("\n>>>Ejected files: %d<<<\n", response.code);
+
+    if (n_ejected == 0)
+    {
+        Response ejectedFiles[n_ejected];
+
+        /* expecting response.code files to be ejected */
+        for (int i = 0; i < n_ejected; i++)
+            readn(fd_socket, &ejectedFiles[i], sizeof(ejectedFiles[i]));
+
+        readn(fd_socket, &response, sizeof(response));
+        printf("\n>>>Reading the final response<<<\n");
+
+        /* put ejected files into dirname if it's specified */
+        if (dirname != NULL)
+        {
+            for (int i = 0; i < n_ejected; i++)
+            {
+                char filename[MAX_PATHNAME];
+                char abs_path_copy[MAX_PATHNAME];
+                char *token;
+                strncpy(abs_path_copy, ejectedFiles[i].path, strlen(ejectedFiles[i].path) + 1);
+
+                token = strtok(abs_path_copy, "/");
+
+                while (token != NULL)
+                {
+                    sprintf(filename, "%s", token);
+                    token = strtok(NULL, "/");
+                }
+
+                char dir_abs_path[MAX_PATHNAME];
+
+                realpath(dirname, dir_abs_path);
+
+                strcat(dir_abs_path, "/");
+                strcat(dir_abs_path, filename);
+
+                int fd = open(dir_abs_path, (O_RDWR | O_CREAT));
+
+                write(fd, ejectedFiles[i].content, ejectedFiles[i].content_size * sizeof(char));
+
+                close(fd);
+            }
+        }
+    }
+
+    if (response.code == WRITE_SUCCESS)
+        return 0;
+
     return -1;
 }
 

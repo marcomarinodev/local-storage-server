@@ -140,13 +140,14 @@ Ht_item *create_item(char *key, FRecord value, size_t file_size)
     return item;
 }
 
-HashTable *create_table(int size, size_t capacity)
+HashTable *create_table(int size, size_t capacity, int max_files)
 {
     // Creates a new HashTable
     HashTable *table = (HashTable *)malloc(sizeof(HashTable));
     table->size = size;
     table->file_size = 0;
     table->capacity = capacity;
+    table->max_files = max_files;
     table->count = 0;
     table->items = (Ht_item **)calloc(table->size, sizeof(Ht_item *));
     for (int i = 0; i < table->size; i++)

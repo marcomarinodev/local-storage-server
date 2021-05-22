@@ -6,7 +6,7 @@
 #include <pthread.h>
 #include <time.h>
 
-#define MAX_CHARACTERS 100000
+#define MAX_CHARACTERS 900000
 #define MAX_PATHNAME 300
 
 typedef struct _frecord
@@ -55,6 +55,7 @@ struct HashTable
     int size;
     size_t file_size;
     size_t capacity;
+    int max_files;
     int count;
 };
 
@@ -74,7 +75,7 @@ void free_overflow_buckets(HashTable *table);
 
 Ht_item *create_item(char *key, FRecord value, size_t file_size);
 
-HashTable *create_table(int size, size_t capacity);
+HashTable *create_table(int size, size_t capacity, int max_files);
 
 void free_item(Ht_item *item);
 

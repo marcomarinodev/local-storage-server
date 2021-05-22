@@ -21,7 +21,7 @@
 #define O_LOCK 2
 
 /* strings limits */
-#define MAX_CHARACTERS 100000
+#define MAX_CHARACTERS 900000
 #define MAX_PATHNAME 300
 
 /* Response codes */
@@ -32,6 +32,8 @@
 #define IS_ALREADY_OPEN 420
 #define IS_ALREADY_CLOSED 450
 #define FILE_IS_LOCKED 410
+#define FILE_ALREADY_EXISTS 490
+
 /* success codes */
 #define OPEN_SUCCESS 200
 #define WRITE_SUCCESS 230
@@ -40,6 +42,7 @@
 #define CLOSE_FILE_SUCCESS 210
 #define REMOVE_FILE_SUCCESS 220
 #define CLOSECONN_SUCCESS 270
+#define APPEND_FILE_SUCCESS 280
 
 /* request codes */
 #define OPEN_FILE_REQ 10

@@ -1,12 +1,11 @@
 #include "server.h"
 
-/* SHARED STATE */
-/* PENDING REQUESTS */
+/* Pending requests */
 queue *pending_requests;
 pthread_mutex_t pending_requests_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t pending_requests_cond = PTHREAD_COND_INITIALIZER;
 
-/* STORAGE */
+/* Storage HT */
 HashTable *storage_ht;
 pthread_mutex_t storage_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -14,12 +13,22 @@ pthread_mutex_t storage_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_t *workers_tid;
 pthread_attr_t *attributes;
 
-/* SERVER SOCKET FILE DESCRIPTOR */
+/* Server socket file descriptor */
 int fd_socket;
+pthread_mutex_t server_socket_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-/* DESCRIPTORS SET */
-fd_set set;
-pthread_mutex_t descriptors_set = PTHREAD_MUTEX_INITIALIZER;
+/* fds active */
+fd_set active_set;
+
+/* Master - Worker Pipe */
+static int mwpipe[2];
+pthread_mutex_t mwpipe_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+/* true -> a worker can write on pipe */
+static int can_pipe = TRUE;
+
+/* workers who have done their request */
+pthread_cond_t workers_done = PTHREAD_COND_INITIALIZER;
 
 /* SIGNAL HANDLING */
 volatile int ending_all = 0;
@@ -57,6 +66,12 @@ int main(int argc, char *argv[])
      * in case of SIGINT, SIGHUP, SIGQUIT
     */
     if (pipe(pfd) == -1)
+    {
+        perror("\n<<<PIPE CREATION ERROR>>>\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if (pipe(mwpipe) == -1)
     {
         perror("\n<<<PIPE CREATION ERROR>>>\n");
         exit(EXIT_FAILURE);
@@ -166,6 +181,7 @@ static void run_server(char *config_pathname)
     int fd_client;
     int fd_num = 0;
     int fd;
+    ServerRequest new_request;
     fd_set rdset;
     Server_setup *server_setup = (Server_setup *)malloc(sizeof(Server_setup));
 
@@ -174,28 +190,40 @@ static void run_server(char *config_pathname)
 
     strcpy(sa.sun_path, server_setup->config_info[0]);
 
+    Pthread_mutex_lock_(&server_socket_mutex);
+
     fd_socket = socket(AF_UNIX, SOCK_STREAM, 0);
     bind(fd_socket, (struct sockaddr *)&sa, sizeof(sa));
     listen(fd_socket, SOMAXCONN);
+
+    FD_ZERO(&active_set);
+    FD_SET(fd_socket, &active_set);
 
     /* max active fd is fd_num */
     if (fd_socket > fd_num)
         fd_num = fd_socket;
 
-    FD_ZERO(&set);
-    FD_SET(fd_socket, &set);
+    Pthread_mutex_unlock_(&server_socket_mutex);
+
+    Pthread_mutex_lock_(&mwpipe_mutex);
+
     /* register the read endpoint descriptor of the pipe */
-    FD_SET(pfd[0], &set);
+    FD_SET(pfd[0], &active_set);
+    FD_SET(mwpipe[0], &active_set);
 
     /* update fd_num */
     if (pfd[0] > fd_num)
         fd_num = pfd[0];
 
-    // INIT
+    if (mwpipe[0] > fd_num)
+        fd_num = mwpipe[0];
+
+    Pthread_mutex_unlock_(&mwpipe_mutex);
+
     pending_requests = createQueue(sizeof(ServerRequest));
 
     save_setup(&server_setup);
-    storage_ht = create_table(1 + (server_setup->max_files_instorage / 2), server_setup->max_storage);
+    storage_ht = create_table(1 + (server_setup->max_files_instorage / 2), server_setup->max_storage, server_setup->max_files_instorage);
 
     workers_tid = (pthread_t *)malloc(sizeof(pthread_t) * server_setup->n_workers);
     attributes = (pthread_attr_t *)malloc(sizeof(pthread_attr_t) * server_setup->n_workers);
@@ -206,14 +234,9 @@ static void run_server(char *config_pathname)
     printf("\n<<<Listen to requests>>>\n");
     while (!ending_all)
     {
-        // printf("\n<<<inside select>>>\n");
-        rdset = set; /* preparo maschera per select */
+        rdset = active_set; /* preparo maschera per select */
 
-        struct timeval timeout;
-        timeout.tv_sec = 0;
-        timeout.tv_usec = 1;
-
-        if (select(fd_num + 1, &rdset, NULL, NULL, &timeout) == -1)
+        if (select(fd_num + 1, &rdset, NULL, NULL, NULL) == -1)
         { /* gest errore */
             perror("select");
             exit(EXIT_FAILURE);
@@ -222,55 +245,80 @@ static void run_server(char *config_pathname)
         { /* select OK */
             for (fd = 0; fd <= fd_num; fd++)
             {
+                /* descriptor is ready */
                 if (FD_ISSET(fd, &rdset))
                 {
+                    /* listen socket ready ==> accept is not blocking */
                     if (fd == fd_socket)
                     { /* sock connect pronto */
                         fd_client = accept(fd_socket, NULL, 0);
-                        FD_SET(fd_client, &set);
+
+                        FD_SET(fd_client, &active_set);
                         if (fd_client > fd_num)
                             fd_num = fd_client;
                     }
                     else
-                    { /* sock I/0 pronto */
-                        // struttura richiesta
-                        ServerRequest request;
-                        // memset
-                        memset(&request, 0, sizeof(request));
-                        // parsing
-                        int n_read = readn(fd, &request, sizeof(ServerRequest));
+                    { /* sock I/0 ready */
+                        /* master worker pipe checking */
+                        Pthread_mutex_lock_(&mwpipe_mutex);
 
-                        if (n_read == 0)
+                        /* pipe reading */
+                        if (fd == mwpipe[0])
                         {
-                            FD_CLR(fd, &set);
-                            //  fd_num = aggiorna(&set);
-                            close(fd);
+                            int res, new_desc;
+                            if ((res = readn(mwpipe[0], &new_desc, sizeof(int))) == -1)
+                            {
+                                perror("Read pipe error");
+                                exit(EXIT_FAILURE);
+                            }
+
+                            /* if a worker needs to write on pipe, it needs to find this variable at TRUE */
+                            can_pipe = TRUE;
+
+                            /* re-listen to the socket */
+                            FD_SET(new_desc, &active_set);
+
+                            /* update maximum fd */
+                            if (new_desc > fd_num)
+                                fd_num = new_desc;
+
+                            Pthread_cond_signal(&workers_done);
+
+                            Pthread_mutex_unlock_(&mwpipe_mutex);
                         }
                         else
                         {
-                            request.fd_cleint = fd;
-                            printf(" --- INCOMING REQUEST ---\n");
-                            print_parsed_request(request);
+                            Pthread_mutex_unlock_(&mwpipe_mutex);
 
-                            if (request.cmd_type == CLOSECONN)
-                            { /* EOF client finito */
-                                FD_CLR(fd, &set);
-                                //  fd_num = aggiorna(&set);
+                            memset(&new_request, 0, sizeof(ServerRequest));
 
-                                Response resp;
-                                memset(&resp, 0, sizeof(resp));
-                                resp.code = CLOSECONN_SUCCESS;
+                            int n_read = readn(fd, &new_request, sizeof(ServerRequest));
 
-                                writen(fd, &resp, sizeof(resp));
-
+                            /* EOF in fd */
+                            if (n_read == 0)
+                            {
                                 close(fd);
+
+                                FD_CLR(fd, &active_set);
+
+                                fd_num = update_fds(active_set, fd_num);
                             }
                             else
                             {
+                                new_request.fd_cleint = fd;
+
+                                /* suspending manager to listen this descriptor */
+                                FD_CLR(fd, &active_set);
+
+                                fd_num = update_fds(active_set, fd_num);
+
+                                printf(" --- INCOMING REQUEST ---\n");
+                                print_parsed_request(new_request);
+
                                 // metti in coda
                                 Pthread_mutex_lock_(&pending_requests_mutex);
 
-                                enqueue(pending_requests, &request);
+                                enqueue(pending_requests, &new_request);
                                 Pthread_cond_signal(&pending_requests_cond);
 
                                 Pthread_mutex_unlock_(&pending_requests_mutex);
@@ -309,6 +357,21 @@ static void run_server(char *config_pathname)
     free(server_setup);
     destroyQueue(pending_requests);
     free_table(storage_ht);
+}
+
+int update_fds(fd_set set, int fd_num)
+{
+    int i, max = 0;
+
+    for (i = 0; i < fd_num; i++)
+    {
+        if (FD_ISSET(i, &set))
+        {
+            if (i > max)
+                max = i;
+        }
+    }
+    return max;
 }
 
 void check_argc(int argc)
@@ -385,45 +448,48 @@ static void *worker_func(void *args)
                 {
                     Pthread_mutex_unlock(&storage_mutex, pthread_self(), "storage");
 
-                    Pthread_mutex_lock(&(rec->lock), pthread_self(), rec->pathname);
-
-                    if (rec->is_locked == FALSE)
-                    {
-                        if (rec->is_open == TRUE) /* if the file already exists and it's already open */
-                        {
-                            /* if the client that wants to open the file already open is not the client that opened the file before */
-                            if (rec->last_client != incoming_request.calling_client)
-                            {
-                                response.code = IS_ALREADY_OPEN;
-                            }
-                            else
-                                response.code = OPEN_SUCCESS;
-                        }
-                        else
-                        {
-                            rec->is_open = TRUE;
-                            response.code = OPEN_SUCCESS;
-                        }
-                    }
-                    else
-                    {
-                        /* case when the file is already locked */
-                        /* case when the client that locked this file is trying to open ig */
-                        if (rec->last_client == incoming_request.calling_client)
-                        {
-                            rec->is_open = TRUE;
-                            response.code = OPEN_SUCCESS;
-                        }
-                        else
-                        {
-                            /* file is locked by another client */
-                            response.code = FILE_IS_LOCKED;
-                        }
-                    }
-
+                    response.code = FILE_ALREADY_EXISTS;
                     free(new.content);
 
-                    Pthread_mutex_unlock(&(rec->lock), pthread_self(), rec->pathname);
+                    // Pthread_mutex_lock(&(rec->lock), pthread_self(), rec->pathname);
+
+                    // if (rec->is_locked == FALSE)
+                    // {
+                    //     if (rec->is_open == TRUE) /* if the file already exists and it's already open */
+                    //     {
+                    //         /* if the client that wants to open the file already open is not the client that opened the file before */
+                    //         if (rec->last_client != incoming_request.calling_client)
+                    //         {
+                    //             response.code = IS_ALREADY_OPEN;
+                    //         }
+                    //         else
+                    //             response.code = OPEN_SUCCESS;
+                    //     }
+                    //     else
+                    //     {
+                    //         rec->is_open = TRUE;
+                    //         response.code = OPEN_SUCCESS;
+                    //     }
+                    // }
+                    // else
+                    // {
+                    //     /* case when the file is already locked */
+                    //     /* case when the client that locked this file is trying to open ig */
+                    //     if (rec->last_client == incoming_request.calling_client)
+                    //     {
+                    //         rec->is_open = TRUE;
+                    //         response.code = OPEN_SUCCESS;
+                    //     }
+                    //     else
+                    //     {
+                    //         /* file is locked by another client */
+                    //         response.code = FILE_IS_LOCKED;
+                    //     }
+                    // }
+
+                    // free(new.content);
+
+                    // Pthread_mutex_unlock(&(rec->lock), pthread_self(), rec->pathname);
                 }
                 else /* file does not exists */
                 {
@@ -463,6 +529,104 @@ static void *worker_func(void *args)
         }
         break;
 
+        case APPEND_FILE_REQ:
+        {
+            /* the append operation is atomic, so we need to take the lock of the server */
+            Pthread_mutex_lock(&storage_mutex, pthread_self(), "storage");
+            Response response;
+            memset(&response, 0, sizeof(Response));
+
+            // searching for the file
+            FRecord *rec = ht_search(storage_ht, incoming_request.pathname);
+
+            if (rec != NULL)
+            {
+                if (rec->is_locked == FALSE)
+                {
+                    if (incoming_request.size > (storage_ht->capacity))
+                    {
+                        response.code = STRG_OVERFLOW;
+                    }
+                    else
+                    {
+                        /* in order to deselect rec from the LRU search ==> rec->is_new = TRUE */
+                        rec->is_new = TRUE;
+
+                        int n_to_eject = select_lru_victims(incoming_request.size);
+                        response.code = n_to_eject;
+                        writen(incoming_request.fd_cleint, &response, sizeof(response));
+
+                        /* sending (if exist) file deleted by lru algo */
+                        for (int i = 0; i < storage_ht->size; i++)
+                        {
+                            if (n_to_eject == 0)
+                                break;
+
+                            Response file_response;
+                            memset(&file_response, 0, sizeof(file_response));
+
+                            response.code = READ_SUCCESS;
+                            Ht_item *rec = storage_ht->items[i];
+
+                            if (rec != NULL)
+                            {
+                                if (rec->value.is_locked == FALSE && rec->value.is_victim == TRUE)
+                                {
+                                    printf(">>>I found what I have to delete<<<\n");
+
+                                    file_response.content_size = rec->value.size;
+
+                                    printf("sizeof(rec->content) = %ld\n", rec->value.size);
+
+                                    strncpy(file_response.path, rec->key, strlen(rec->key) + 1);
+                                    memcpy(file_response.content, rec->value.content, rec->value.size);
+
+                                    printf("sending file...\n");
+                                    writen(incoming_request.fd_cleint, &file_response, sizeof(file_response));
+
+                                    ht_delete(storage_ht, rec->key);
+
+                                    n_to_eject--;
+                                }
+                            }
+                        }
+
+                        /* Having space to append... */
+                        time_t now = time(NULL);
+                        size_t old_size = rec->size;
+
+                        rec->is_locked = FALSE;
+                        rec->is_new = FALSE;
+                        rec->last_edit = now;
+                        rec->size += incoming_request.size;
+
+                        if (rec->content == NULL)
+                        {
+                            rec->content = malloc(1 + (sizeof(char) * incoming_request.size));
+                            memcpy(rec->content, incoming_request.content, incoming_request.size);
+                        }
+                        else
+                        {
+                            printf("<<<appending>>>\n");
+                            char *new_content = conc(old_size, rec->content, incoming_request.content);
+                            free(rec->content);
+                            rec->content = malloc(1 + (sizeof(char) * (incoming_request.size + old_size)));
+                            memcpy(rec->content, new_content, old_size + incoming_request.size);
+                            free(new_content);
+                        }
+
+                        storage_ht->file_size += incoming_request.size;
+
+                        response.code = APPEND_FILE_SUCCESS;
+                    }
+                }
+            }
+
+            writen(incoming_request.fd_cleint, &response, sizeof(response));
+            Pthread_mutex_unlock(&storage_mutex, pthread_self(), "storage");
+        }
+        break;
+
         case WRITE_FILE_REQ:
         {
             Response response;
@@ -478,7 +642,7 @@ static void *worker_func(void *args)
                 if (rec->is_open == TRUE && rec->is_locked == TRUE)
                 {
                     /* use response.code as n_to_eject */
-                    // response.code = n_to_eject;
+
                     int n_to_eject = select_lru_victims(incoming_request.size);
                     response.code = n_to_eject;
                     writen(incoming_request.fd_cleint, &response, sizeof(response));
@@ -488,10 +652,9 @@ static void *worker_func(void *args)
                      * send the ejected file
                     */
 
-                    int k = n_to_eject;
                     for (int i = 0; i < storage_ht->size; i++)
                     {
-                        if (k == 0)
+                        if (n_to_eject == 0)
                             break;
 
                         Response file_response;
@@ -505,7 +668,6 @@ static void *worker_func(void *args)
                             if (rec->value.is_locked == FALSE && rec->value.is_victim == TRUE)
                             {
                                 printf(">>>I found what I have to delete<<<\n");
-                                time_t now = time(0);
 
                                 file_response.content_size = rec->value.size;
 
@@ -519,7 +681,7 @@ static void *worker_func(void *args)
 
                                 ht_delete(storage_ht, rec->key);
 
-                                k--;
+                                n_to_eject--;
                             }
                         }
                     }
@@ -684,11 +846,6 @@ static void *worker_func(void *args)
         }
         break;
 
-        case APPEND_FILE_REQ:
-        {
-        }
-        break;
-
         case REMOVE_FILE_REQ:
         {
             Response response;
@@ -741,7 +898,6 @@ static void *worker_func(void *args)
             if (rec != NULL)
             {
                 Pthread_mutex_unlock(&storage_mutex, incoming_request.calling_client, "storage");
-                time_t now = time(0);
 
                 Pthread_mutex_lock(&(rec->lock), pthread_self(), rec->pathname);
                 if (rec->is_open == TRUE)
@@ -796,22 +952,50 @@ static void *worker_func(void *args)
 
         print_table(storage_ht);
 
-        Pthread_mutex_lock(&descriptors_set, pthread_self(), "descriptors set");
-        FD_SET(incoming_request.fd_cleint, &set);
-        Pthread_mutex_unlock(&descriptors_set, pthread_self(), "descriptors set");
+        /* writing into the pipe in order to tell the manager to re-listen to this fd */
+        Pthread_mutex_lock_(&mwpipe_mutex);
+
+        while (can_pipe == FALSE)
+            Pthread_cond_wait(&workers_done, &mwpipe_mutex);
+
+        can_pipe = FALSE;
+
+        int res;
+        if ((res = writen(mwpipe[1], &(incoming_request.fd_cleint), sizeof(int))) == -1)
+        {
+            perror("Writing on pipe error");
+            exit(EXIT_FAILURE);
+        }
+
+        Pthread_mutex_unlock_(&mwpipe_mutex);
+
+        printf("wrote on pipe\n");
     }
 
     return NULL;
 }
 
+char *conc(size_t size1, char const *str1, char const *str2)
+{
+    size_t const l2 = strlen(str2);
+
+    char *result = malloc(size1 + l2 + 1);
+    if (!result)
+        return result;
+    memcpy(result, str1, size1);
+    memcpy(result + size1, str2, l2 + 1);
+    return result;
+}
+
 int select_lru_victims(size_t incoming_req_size)
 {
     size_t sim_storage_size = storage_ht->file_size;
+    int sim_storage_count = storage_ht->count;
     int n_to_eject = 0;
 
     /* making a cycle to determine how many files need to be ejected
                        to make space for the new file */
-    while ((incoming_req_size + sim_storage_size) > storage_ht->capacity)
+    while ((incoming_req_size + sim_storage_size) > storage_ht->capacity || (1 + sim_storage_count) > (storage_ht->max_files))
     {
         char oldest_path[MAX_PATHNAME];
 
@@ -826,6 +1010,7 @@ int select_lru_victims(size_t incoming_req_size)
 
         printf("\n>>>sim actual storage size = %ld<<<\n", sim_storage_size);
         sim_storage_size -= victim->size;
+        sim_storage_count--;
         n_to_eject++;
     }
 

@@ -60,7 +60,11 @@ static void run_server(char *config_pathname);
 
 static void *worker_func(void *args);
 
+int update_fds(fd_set set, int fd_num);
+
 int select_lru_victims(size_t incoming_req_size);
+
+char *conc(size_t size1, char const *str1, char const *str2);
 
 void save_setup(Server_setup **setup);
 
