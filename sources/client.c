@@ -273,6 +273,7 @@ int perform(Client_setup setup, LList *request_commands)
 
                 if (open_res == 0)
                 {
+                    sleep(8);
                     if (writeFile(abs_path, c_setup.ejected_buffer) == 0)
                     {
                         printf("\nSuccessful write operation \n");
@@ -292,8 +293,12 @@ int perform(Client_setup setup, LList *request_commands)
                 else
                 {
                     printf("\n<<<OPEN FAILED DUE TO (%s)>>>\n", translate_error_code(errno));
+
+                    /* in order to test appendToFile */
+                    if (errno == FILE_ALREADY_EXISTS)
+                        appendToFile(abs_path, "   >>>hey hey hey sono un test<<<", 34, c_setup.ejected_buffer);
+
                 }
-                
 
                 i++;
             }

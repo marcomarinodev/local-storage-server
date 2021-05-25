@@ -71,7 +71,6 @@ typedef struct request_tosend
     int flags;     /* -1 there is no flags */
     long int size; /* -1 there is no file to send (in bytes) */
     char content[MAX_CHARACTERS];
-    size_t content_size;
     int fd_cleint;
 } ServerRequest;
 

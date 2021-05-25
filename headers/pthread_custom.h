@@ -15,13 +15,13 @@ void Pthread_create(pthread_t *t, const pthread_attr_t *attr, void *(*function)(
  * pthread_mutex_lock with error checking
 */
 void Pthread_mutex_lock(pthread_mutex_t *mutex, pid_t calling_thread, char *lock_name);
-void Pthread_mutex_lock_(pthread_mutex_t *mutex);
+void Pthread_mutex_lock_(pthread_mutex_t *mutex, char *lock_name);
 
 /**
  * pthread_mutex_unlock with error checking
 */
 void Pthread_mutex_unlock(pthread_mutex_t *mutex, pid_t calling_thread, char *lock_name);
-void Pthread_mutex_unlock_(pthread_mutex_t *mutex);
+void Pthread_mutex_unlock_(pthread_mutex_t *mutex, char *lock_name);
 
 /**
  * pthread_cond_wait with error checking

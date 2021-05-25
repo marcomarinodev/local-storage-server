@@ -32,7 +32,7 @@ void Pthread_mutex_lock(pthread_mutex_t *mutex, pid_t calling_thread, char *lock
         printf("\n<<<(%ld) locking %s>>>\n", (long)calling_thread, lock_name);
 }
 
-void Pthread_mutex_lock_(pthread_mutex_t *mutex)
+void Pthread_mutex_lock_(pthread_mutex_t *mutex, char* lock_name)
 {
     int err;
     if ((err = pthread_mutex_lock(mutex)) != 0)
@@ -40,6 +40,9 @@ void Pthread_mutex_lock_(pthread_mutex_t *mutex)
         perror("Pthread_mutex_lock:");
         exit(EXIT_FAILURE);
     }
+
+    if (lock_name != NULL)
+        printf("\n<<<locking %s>>>\n", lock_name);
 }
 
 void Pthread_mutex_unlock(pthread_mutex_t *mutex, pid_t calling_thread, char *lock_name)
@@ -57,7 +60,7 @@ void Pthread_mutex_unlock(pthread_mutex_t *mutex, pid_t calling_thread, char *lo
         printf("\n<<<(%ld) unlocking %s>>>\n", (long)calling_thread, lock_name);
 }
 
-void Pthread_mutex_unlock_(pthread_mutex_t *mutex)
+void Pthread_mutex_unlock_(pthread_mutex_t *mutex, char *lock_name)
 {
 
     int err;
@@ -67,6 +70,9 @@ void Pthread_mutex_unlock_(pthread_mutex_t *mutex)
         perror("Pthread_mutex_unlock:");
         exit(EXIT_FAILURE);
     }
+
+    if (lock_name != NULL)
+        printf("\n<<<unlocking %s>>>\n", lock_name);
 }
 
 void Pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex)
