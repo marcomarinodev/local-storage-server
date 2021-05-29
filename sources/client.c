@@ -749,6 +749,8 @@ int lsR(const char *dirname, int *n)
                     (*n)--;
                     if (closeFile(realpath(dirname, abs_path)) == -1)
                         printf("\n<<<CLOSE FAILED DUE TO (%s)>>>\n", translate_error_code(errno));
+
+                    printf("closed successfully\n");
                 }
                 else
                     printf("\n<<<WRITE FILE ERROR>>>\n");

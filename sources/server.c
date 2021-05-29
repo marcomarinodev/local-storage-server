@@ -219,42 +219,30 @@ static void run_server(Server_setup *server_setup)
     sa.sun_family = AF_UNIX;
     strcpy(sa.sun_path, server_setup->config_info[0]);
 
-    Pthread_mutex_lock_(&server_socket_mutex, "server socket");
-
     fd_socket = socket(AF_UNIX, SOCK_STREAM, 0);
     // unlink(sa.sun_path);
     bind(fd_socket, (struct sockaddr *)&sa, sizeof(sa));
     listen(fd_socket, SOMAXCONN);
 
-    Pthread_mutex_lock_(&ac_mutex, "active connections");
     FD_ZERO(&active_set);
     FD_SET(fd_socket, &active_set);
-    Pthread_mutex_unlock_(&ac_mutex, "active connections");
 
     /* max active fd is fd_num */
     if (fd_socket > fd_num)
         fd_num = fd_socket;
 
-    Pthread_mutex_unlock_(&server_socket_mutex, "server socket");
-
-    Pthread_mutex_lock_(&mwpipe_mutex, "mw pipe");
-    Pthread_mutex_lock_(&ac_mutex, "active connections");
     /* register the read endpoint descriptor of the pipe */
     FD_SET(mwpipe[0], &active_set);
-    Pthread_mutex_unlock_(&ac_mutex, "active connections");
+
     if (mwpipe[0] > fd_num)
         fd_num = mwpipe[0];
-    Pthread_mutex_unlock_(&mwpipe_mutex, "mw pipe");
 
-    Pthread_mutex_lock_(&pfd_mutex, "pfd pipe");
-    Pthread_mutex_lock_(&ac_mutex, "active connections");
     /* register the read endpoint descriptor of the pipe */
     FD_SET(pfd[0], &active_set);
-    Pthread_mutex_unlock_(&ac_mutex, "active connections");
+
     /* update fd_num */
     if (pfd[0] > fd_num)
         fd_num = pfd[0];
-    Pthread_mutex_unlock_(&pfd_mutex, "pfd pipe");
 
     for (int i = 0; i < server_setup->n_workers; i++)
         spawn_thread(i);
@@ -270,61 +258,54 @@ static void run_server(Server_setup *server_setup)
     */
     while (!ending_all)
     {
-        Pthread_mutex_lock_(&ac_mutex, "active connections");
         rdset = active_set; /* preparo maschera per select */
-        Pthread_mutex_unlock_(&ac_mutex, "active connections");
 
-        struct timeval timeout;
-        timeout.tv_sec = 1;
-        timeout.tv_usec = 0;
-
-        if (select(fd_num + 1, &rdset, NULL, NULL, &timeout) == -1)
+        if (select(fd_num + 1, &rdset, NULL, NULL, NULL) == -1)
         { /* gest errore */
             perror("select");
             exit(EXIT_FAILURE);
         }
         else
-        { /* select OK */
+        {
+            printf("$$$ select (fd_set dim = %d):\n", fd_num);
             for (fd = 0; fd <= fd_num; fd++)
             {
                 if (FD_ISSET(fd, &rdset))
-                    printf("\n=======> %d is set\n", fd);
+                    printf(" %d ", fd);
+                else
+                    printf("0");
+            }
 
-                
+            printf("\n");
+
+            printf("$$$ ciclo bitmap descrittori (fd_set dim = %d):\n", fd_num);
+            for (fd = 0; fd <= fd_num; fd++)
+            {
+                if (FD_ISSET(fd, &rdset))
+                    printf(" %d ", fd);
+                else
+                    printf("0");
+
                 /* descriptor is ready */
+                printf("$$$ controllo indice %d[set=%d]\n", fd, FD_ISSET(fd, &rdset));
                 if (FD_ISSET(fd, &rdset))
                 {
-                    printf("\nsomething is set\n");
                     /* listen socket ready ==> accept is not blocking */
                     if (fd == fd_socket)
                     {
-                        _conn *new_con = (_conn *)malloc(sizeof(_conn));
-                        memset(new_con, 0, sizeof(*new_con));
+                        fd_client = accept(fd_socket, NULL, 0);
+                   //     printf("\nil client con fd = %d si sta connettendo\n", fd_client);
 
-                        new_con->fd = accept(fd_socket, NULL, 0);
+                        FD_SET(fd_client, &active_set);
 
-                        /* new connection => push to queue */
-                        Pthread_mutex_lock_(&ac_mutex, "active connections");
+                        if (fd_client > fd_num)
+                            fd_num = fd_client;
 
-                        FD_SET(new_con->fd, &active_set);
-
-                        if (new_con->fd > fd_num)
-                            fd_num = new_con->fd;
-
-                        char *cl_key = (char *)malloc(sizeof(char) * 4);
-                        memset(cl_key, 0, 4);
-
-                        sprintf(cl_key, "%d", new_con->fd);
-
-                        LL_enqueue(&active_connections, (void *)new_con, cl_key);
-                        printf("\n((( %d is connected )))\n", new_con->fd);
-
-                        Pthread_mutex_unlock_(&ac_mutex, "active connections");
+                     //   printf("\n((( %d is connected )))\n", fd_client);
                     }
                     else
                     { /* sock I/0 ready */
                         /* master worker pipe checking */
-                        Pthread_mutex_lock_(&mwpipe_mutex, "mw pipe");
 
                         /* pipe reading (re-listen to a client) */
                         if (fd == mwpipe[0])
@@ -342,22 +323,17 @@ static void run_server(Server_setup *server_setup)
                             can_pipe = 1;
 
                             /* re-listen to the socket */
-                            Pthread_mutex_lock_(&ac_mutex, "active connections");
                             FD_SET(new_desc, &active_set);
 
                             /* update maximum fd */
                             if (new_desc > fd_num)
                                 fd_num = new_desc;
 
-                            Pthread_mutex_unlock_(&ac_mutex, "active connections");
-
-                            Pthread_cond_signal(&workers_done);
-
-                            Pthread_mutex_unlock_(&mwpipe_mutex, "mw pipe");
+                            // Pthread_cond_signal(&workers_done);
                         }
                         else
                         { /* normal request */
-                            Pthread_mutex_unlock_(&mwpipe_mutex, "mw pipe");
+                            
 
                             memset(&new_request, 0, sizeof(ServerRequest));
 
@@ -368,10 +344,10 @@ static void run_server(Server_setup *server_setup)
                             {
                                 close(fd);
 
-                                Pthread_mutex_lock_(&ac_mutex, "active connections");
+
                                 FD_CLR(fd, &active_set);
 
-                                fd_num = update_fds(active_set, fd_num);
+                                // fd_num = update_fds(active_set, fd_num);
 
                                 /* we need to delete this fd from connections list */
 
@@ -380,20 +356,18 @@ static void run_server(Server_setup *server_setup)
                                 sprintf(key, "%d", fd);
 
                                 printf("\n---> closing connection %s\n", key);
-                                LL_remove_by_key(&active_connections, key);
 
-                                Pthread_mutex_unlock_(&ac_mutex, "active connections");
+
                             }
                             else
                             {
                                 new_request.fd_cleint = fd;
 
                                 /* suspending manager to listen this descriptor */
-                                Pthread_mutex_lock_(&ac_mutex, "active connections");
+
                                 FD_CLR(fd, &active_set);
 
-                                fd_num = update_fds(active_set, fd_num);
-                                Pthread_mutex_unlock_(&ac_mutex, "active connections");
+                                // fd_num = update_fds(active_set, fd_num);
 
                                 printf(" --- INCOMING REQUEST ---\n");
                                 print_parsed_request(new_request);
@@ -410,6 +384,8 @@ static void run_server(Server_setup *server_setup)
                     }
                 }
             }
+
+            printf("\n");
         }
     }
 
@@ -1053,13 +1029,6 @@ static void *worker_func(void *args)
         }
 
         /* writing into the pipe in order to tell the manager to re-listen to this fd */
-        Pthread_mutex_lock_(&mwpipe_mutex, "mw pipe");
-
-        while (can_pipe == FALSE)
-            Pthread_cond_wait(&workers_done, &mwpipe_mutex);
-
-        can_pipe = FALSE;
-
         int res;
         printf("\n<<<riascolto al fd %d>>>\n", incoming_request.fd_cleint);
         if ((res = writen(mwpipe[1], &(incoming_request.fd_cleint), sizeof(int))) == -1)
@@ -1067,8 +1036,6 @@ static void *worker_func(void *args)
             perror("Writing on pipe error");
             exit(EXIT_FAILURE);
         }
-
-        Pthread_mutex_unlock_(&mwpipe_mutex, "mw pipe");
 
         printf("wrote on pipe\n");
     }

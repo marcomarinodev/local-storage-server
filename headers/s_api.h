@@ -88,6 +88,8 @@ struct pthread_arg_struct
     int worker_index;
 };
 
+int fd_is_valid(int fd);
+
 /**
  * Viene aperta una connessione AF_UNIX al socket file sockname. Se il server non accetta immediatamente la
  * richiesta di connessione, la connessione da parte del client viene ripetuta dopo ‘msec’ millisecondi e fino allo

@@ -248,6 +248,8 @@ int closeFile(const char *pathname)
 
     readn(fd_socket, &response, sizeof(response));
 
+    printf("close file response from server\n");
+
     if (errno != EINTR)
     {
         if (response.code == CLOSE_FILE_SUCCESS)
@@ -312,7 +314,12 @@ int writeFile(const char *pathname, const char *dirname)
 
     int sending_err = 0;
 
-    printf("sending...\n");
+    
+
+    if (fd_is_valid(fd_socket) == 1)
+        printf("sending... to %d\n", fd_socket);    
+    else
+        printf("fd_socket not valid\n");
 
     if ((sending_err = writen(fd_socket, &request, sizeof(ServerRequest))) == -1)
     {
@@ -320,6 +327,7 @@ int writeFile(const char *pathname, const char *dirname)
         return -1;
     }
 
+    printf("--- reading to socket\n");
     /* put the n_to_eject inside response.code */
     readn(fd_socket, &response, sizeof(response));
 
@@ -376,6 +384,11 @@ int writeFile(const char *pathname, const char *dirname)
         return 0;
 
     return -1;
+}
+
+int fd_is_valid(int fd)
+{
+    return fcntl(fd, F_GETFD) != -1 || errno != EBADF;
 }
 
 int appendToFile(const char *pathname, void *buf, size_t size, const char *dirname)
