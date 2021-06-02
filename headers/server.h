@@ -20,7 +20,7 @@
 #include "queue.h"
 #include "ht.h"
 #include "s_api.h"
-#include "linked_list.h"
+#include "doubly_ll.h"
 
 #define CONFIG_ROWS 4 /* rows in config.txt */
 #define UNIX_PATH_MAX 108

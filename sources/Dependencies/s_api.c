@@ -297,24 +297,18 @@ int writeFile(const char *pathname, const char *dirname)
     request.fd_cleint = 0;
     memset(request.content, 0, MAX_CHARACTERS);
 
-    char *buffer = (char *)malloc(1 + (sizeof(char) * file_size));
-    memset(buffer, 0, 1 + file_size);
+    // memset(buffer, 0, 1 + file_size);
 
     /* file scan start */
     int fd = open(request.pathname, (O_RDWR | O_APPEND));
-    read(fd, buffer, file_size);
+    read(fd, request.content, file_size);
     close(fd);
     /* file scan end */
 
-    /* copy content inside request.content */
-    strncpy(request.content, buffer, file_size);
-    free(buffer);
 
     printf("FILE TO SEND = %s WITH SIZE %ld\n", request.content, request.size);
 
     int sending_err = 0;
-
-    
 
     if (fd_is_valid(fd_socket) == 1)
         printf("sending... to %d\n", fd_socket);    

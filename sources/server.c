@@ -39,8 +39,8 @@ volatile int ending_all = 0;
 static int pfd[2];
 static pthread_mutex_t pfd_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-/* queue of client_fd elements */
-static LList active_connections;
+/* list of client_fd elements */
+static struct dd_Node *active_connections = NULL;
 static pthread_mutex_t ac_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 int main(int argc, char *argv[])
@@ -77,7 +77,6 @@ int main(int argc, char *argv[])
     save_setup(&server_setup);
 
     pending_requests = createQueue(sizeof(ServerRequest));
-    LL_init(&active_connections, print_conn);
 
     server_stat.actual_capacity = 0;
     server_stat.actual_max_files = 0;
@@ -258,9 +257,13 @@ static void run_server(Server_setup *server_setup)
     */
     while (!ending_all)
     {
+        pthread_mutex_lock(&ac_mutex);
         rdset = active_set; /* preparo maschera per select */
+        pthread_mutex_unlock(&ac_mutex);
 
-        if (select(fd_num + 1, &rdset, NULL, NULL, NULL) == -1)
+        struct timeval tv = {1, 0};
+
+        if (select(fd_num + 1, &rdset, NULL, NULL, &tv) == -1)
         { /* gest errore */
             perror("select");
             exit(EXIT_FAILURE);
@@ -294,18 +297,29 @@ static void run_server(Server_setup *server_setup)
                     if (fd == fd_socket)
                     {
                         fd_client = accept(fd_socket, NULL, 0);
-                   //     printf("\nil client con fd = %d si sta connettendo\n", fd_client);
+                        //     printf("\nil client con fd = %d si sta connettendo\n", fd_client);
+
+                        pthread_mutex_lock(&ac_mutex);
 
                         FD_SET(fd_client, &active_set);
+
+                        /* append the new connection to active list */
+                        d_append(&active_connections, fd_client);
+
+                        /* printing active connections */
+                        d_print(active_connections);
+
+                        pthread_mutex_unlock(&ac_mutex);
 
                         if (fd_client > fd_num)
                             fd_num = fd_client;
 
-                     //   printf("\n((( %d is connected )))\n", fd_client);
+                        //   printf("\n((( %d is connected )))\n", fd_client);
                     }
                     else
                     { /* sock I/0 ready */
                         /* master worker pipe checking */
+                        pthread_mutex_lock(&mwpipe_mutex);
 
                         /* pipe reading (re-listen to a client) */
                         if (fd == mwpipe[0])
@@ -321,6 +335,7 @@ static void run_server(Server_setup *server_setup)
 
                             /* if a worker needs to write on pipe, it needs to find this variable at TRUE */
                             can_pipe = 1;
+                            pthread_mutex_unlock(&mwpipe_mutex);
 
                             /* re-listen to the socket */
                             FD_SET(new_desc, &active_set);
@@ -333,8 +348,7 @@ static void run_server(Server_setup *server_setup)
                         }
                         else
                         { /* normal request */
-                            
-
+                            pthread_mutex_unlock(&mwpipe_mutex);
                             memset(&new_request, 0, sizeof(ServerRequest));
 
                             int n_read = readn(fd, &new_request, sizeof(ServerRequest));
@@ -344,30 +358,24 @@ static void run_server(Server_setup *server_setup)
                             {
                                 close(fd);
 
+                                pthread_mutex_lock(&ac_mutex);
+                                /* remove it from active connections */
+                                d_delete_with_key(&active_connections, fd);
+
+                                printf("\n%d disconnected, printing the connections list\n", fd);
 
                                 FD_CLR(fd, &active_set);
 
-                                // fd_num = update_fds(active_set, fd_num);
-
-                                /* we need to delete this fd from connections list */
-
-                                char key[4];
-
-                                sprintf(key, "%d", fd);
-
-                                printf("\n---> closing connection %s\n", key);
-
-
+                                pthread_mutex_unlock(&ac_mutex);
                             }
                             else
                             {
                                 new_request.fd_cleint = fd;
 
                                 /* suspending manager to listen this descriptor */
-
+                                pthread_mutex_lock(&ac_mutex);
                                 FD_CLR(fd, &active_set);
-
-                                // fd_num = update_fds(active_set, fd_num);
+                                pthread_mutex_unlock(&ac_mutex);
 
                                 printf(" --- INCOMING REQUEST ---\n");
                                 print_parsed_request(new_request);
@@ -391,18 +399,21 @@ static void run_server(Server_setup *server_setup)
 
     printf("\n<<<SIGNAL RECEIVED>>>\n");
 
-    LL_print(active_connections, "--- ACTIVE CONNECTIONS BEFORE CLOSING ALL CONNECTIONS ---");
-
     /* close all connections inside the active_connections LList */
-    Node *curr = active_connections.head;
-
-    if (curr != NULL)
+    struct dd_Node *current = active_connections;
+    if (current != NULL)
     {
-        while (curr->next != NULL)
+        struct dd_Node *prev = current;
+
+        while (current != NULL)
         {
-            int curr_fd = *(int *)curr->data;
-            close(fd);
+            current = current->next;
+            d_delete_node(&active_connections, prev);
+            prev = current;
         }
+
+        /* delete last node */
+        d_delete_node(&active_connections, prev);
     }
     else
         printf("\n<<<all of connections were closed (maybe from a SIGHUP)>>>\n");
@@ -420,8 +431,6 @@ static void run_server(Server_setup *server_setup)
         Pthread_cond_signal(&pending_requests_cond);
         sleep(1);
     }
-
-    LL_free(active_connections, NULL);
 
     for (int i = 0; i < server_setup->n_workers; i++)
     {
@@ -441,21 +450,6 @@ static void run_server(Server_setup *server_setup)
     free(server_setup);
     destroyQueue(pending_requests);
     ht_free(storage_ht);
-}
-
-int update_fds(fd_set set, int fd_num)
-{
-    int i, max = 0;
-
-    for (i = 0; i < fd_num; i++)
-    {
-        if (FD_ISSET(i, &set))
-        {
-            if (i > max)
-                max = i;
-        }
-    }
-    return max;
 }
 
 void print_conn(Node *to_print)
@@ -1029,6 +1023,8 @@ static void *worker_func(void *args)
         }
 
         /* writing into the pipe in order to tell the manager to re-listen to this fd */
+        pthread_mutex_lock(&mwpipe_mutex);
+
         int res;
         printf("\n<<<riascolto al fd %d>>>\n", incoming_request.fd_cleint);
         if ((res = writen(mwpipe[1], &(incoming_request.fd_cleint), sizeof(int))) == -1)
@@ -1036,6 +1032,8 @@ static void *worker_func(void *args)
             perror("Writing on pipe error");
             exit(EXIT_FAILURE);
         }
+
+        pthread_mutex_unlock(&mwpipe_mutex);
 
         printf("wrote on pipe\n");
     }
