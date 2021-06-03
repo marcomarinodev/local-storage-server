@@ -31,4 +31,6 @@ void d_delete_node(struct dd_Node **head_ref, struct dd_Node *del);
 /* Function to delete a node in a Doubly Linked List given a key */
 void d_delete_with_key(struct dd_Node **head_ref, int key);
 
+int d_is_empty(struct dd_Node *node);
+
 #endif

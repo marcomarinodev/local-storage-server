@@ -18,7 +18,6 @@ static pthread_attr_t *attributes;
 
 /* Server socket file descriptor */
 static int fd_socket;
-static pthread_mutex_t server_socket_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /* fds active */
 static fd_set active_set;
@@ -37,7 +36,10 @@ static pthread_cond_t workers_done = PTHREAD_COND_INITIALIZER;
 volatile int ending_all = 0;
 
 static int pfd[2];
-static pthread_mutex_t pfd_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t spipe_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static int is_sigquit = FALSE;
+static int is_sighup = FALSE;
 
 /* list of client_fd elements */
 static struct dd_Node *active_connections = NULL;
@@ -121,41 +123,30 @@ int main(int argc, char *argv[])
 static void *sigHandler(void *arg)
 {
     sigset_t *set = (sigset_t *)arg;
+    int sig, r, res;
 
-    for (;;)
+    r = sigwait(set, &sig);
+
+    if (r != 0)
     {
-        int sig;
-        int r = sigwait(set, &sig);
-        if (r != 0)
-        {
-            errno = r;
-            perror("\n<<<FATAL ERROR 'sigwaitì>>>\n");
-            return NULL;
-        }
-
-        switch (sig)
-        {
-        case SIGINT:
-            ending_all = 1;
-
-            close(pfd[1]);
-            close(pfd[0]);
-            return NULL;
-            break;
-        case SIGQUIT:
-            ending_all = 1;
-
-            close(pfd[1]);
-            return NULL;
-            break;
-        case SIGHUP:
-            break;
-        default:
-            break;
-        }
+        errno = r;
+        perror("\n<<<FATAL ERROR 'sigwait>>>\n");
+        exit(EXIT_FAILURE);
     }
 
-    return NULL;
+    /* writing into the pipe which is the signal code */
+    pthread_mutex_lock(&spipe_mutex);
+
+    /* delegating what to do to the manager */
+    if ((res = writen(pfd[1], &sig, sizeof(int))) == -1)
+    {
+        perror("\n<<<FATAL ERROR 'writing into pipe error'>>>\n");
+        exit(EXIT_FAILURE);
+    }
+
+    pthread_mutex_unlock(&spipe_mutex);
+
+    return (void *)NULL;
 }
 
 void spawn_thread(int index)
@@ -181,7 +172,7 @@ void spawn_thread(int index)
         return;
     }
 
-    /* detached mode */
+    /* joinable mode */
     if (pthread_attr_setdetachstate(&attributes[index], PTHREAD_CREATE_JOINABLE) != 0)
     {
         fprintf(stderr, "pthread_attr_setdetachstate FALLITA\n");
@@ -210,7 +201,7 @@ static void run_server(Server_setup *server_setup)
 
     int fd_client;
     int fd_num = 0;
-    int fd, _sig;
+    int fd, sig;
     ServerRequest new_request;
     fd_set rdset;
 
@@ -318,6 +309,76 @@ static void run_server(Server_setup *server_setup)
                     }
                     else
                     { /* sock I/0 ready */
+
+                        pthread_mutex_lock(&spipe_mutex);
+
+                        if (fd == pfd[0])
+                        {
+                            int res;
+                            /* reading signal code from pipe */
+                            if ((res = readn(pfd[0], &sig, sizeof(int))) == -1)
+                            {
+                                perror("<<<FATAL ERROR while reading into the pipe>>>");
+                                exit(EXIT_FAILURE);
+                            }
+
+                            FD_CLR(pfd[0], &active_set);
+                            pthread_mutex_unlock(&spipe_mutex);
+
+                            /* case if signal is SIGINT or SIGQUIT */
+                            /* what we have to do is simply close all active connections
+                             * and terminate the workers properly
+                            */
+                            if (sig == SIGINT || sig == SIGQUIT)
+                            {
+                                ending_all = TRUE;
+                                /* taking the lock of the requests before waking up asleep workers */
+                                pthread_mutex_lock(&pending_requests_mutex);
+
+                                is_sigquit = TRUE;
+                                pthread_cond_broadcast(&pending_requests_cond);
+
+                                pthread_mutex_unlock(&pending_requests_mutex);
+                                break;
+                            }
+                            else if (sig == SIGHUP)
+                            {
+                                /* if the signal is SIGHUP I have to close the server socket
+                                 * and clear its bit inside the bitmap. We also need the mutex
+                                 * of active connections d_list in order to check if it is free.
+                                */
+                                pthread_mutex_lock(&ac_mutex);
+
+                                is_sighup = TRUE;
+                                close(fd_socket);
+                                FD_CLR(fd_socket, &active_set);
+
+                                /* if there are some active connections, then the server must complete their
+                                 * requests, so we do another select loop,
+                                */
+                                if (d_is_empty(active_connections) == TRUE)
+                                {
+                                    /* do what we did for SIGQUIT/SIGHUP */
+                                    ending_all = TRUE;
+
+                                    /* taking the lock of the requests before waking up asleep workers */
+                                    pthread_mutex_lock(&pending_requests_mutex);
+
+                                    is_sigquit = TRUE;
+                                    pthread_cond_broadcast(&pending_requests_cond);
+
+                                    pthread_mutex_unlock(&pending_requests_mutex);
+                                    pthread_mutex_lock(&ac_mutex);
+
+                                    break;
+                                }
+
+                                pthread_mutex_lock(&ac_mutex);
+                            }
+                        }
+
+                        pthread_mutex_unlock(&spipe_mutex);
+
                         /* master worker pipe checking */
                         pthread_mutex_lock(&mwpipe_mutex);
 
@@ -335,7 +396,6 @@ static void run_server(Server_setup *server_setup)
 
                             /* if a worker needs to write on pipe, it needs to find this variable at TRUE */
                             can_pipe = 1;
-                            pthread_mutex_unlock(&mwpipe_mutex);
 
                             /* re-listen to the socket */
                             FD_SET(new_desc, &active_set);
@@ -344,7 +404,8 @@ static void run_server(Server_setup *server_setup)
                             if (new_desc > fd_num)
                                 fd_num = new_desc;
 
-                            // Pthread_cond_signal(&workers_done);
+                            Pthread_cond_signal(&workers_done);
+                            pthread_mutex_unlock(&mwpipe_mutex);
                         }
                         else
                         { /* normal request */
@@ -361,6 +422,12 @@ static void run_server(Server_setup *server_setup)
                                 pthread_mutex_lock(&ac_mutex);
                                 /* remove it from active connections */
                                 d_delete_with_key(&active_connections, fd);
+
+                                if (d_is_empty(active_connections) != TRUE)
+                                {
+                                    printf("\nactive connections after delete a connection\n");
+                                    d_print(active_connections);
+                                }
 
                                 printf("\n%d disconnected, printing the connections list\n", fd);
 
@@ -479,18 +546,18 @@ static void *worker_func(void *args)
 
     printf("--- thread %ld attivo ---\n", pthread_self());
 
-    while (!ending_all)
+    while (TRUE)
     {
         Pthread_mutex_lock(&pending_requests_mutex, pthread_self(), "requests queue");
 
         if (isEmpty(pending_requests) == 1)
             Pthread_cond_wait(&pending_requests_cond, &pending_requests_mutex);
 
-        if (ending_all == 1)
+        if (is_sigquit == TRUE)
         {
             printf("\n<<<closing worker>>>\n");
             Pthread_mutex_unlock(&pending_requests_mutex, pthread_self(), "requests queue");
-            pthread_exit(NULL);
+            break;
         }
 
         dequeue(pending_requests, &incoming_request);
@@ -1025,6 +1092,11 @@ static void *worker_func(void *args)
         /* writing into the pipe in order to tell the manager to re-listen to this fd */
         pthread_mutex_lock(&mwpipe_mutex);
 
+        while (can_pipe == 0)
+            pthread_cond_wait(&workers_done, &mwpipe_mutex);
+
+        can_pipe = 0;
+
         int res;
         printf("\n<<<riascolto al fd %d>>>\n", incoming_request.fd_cleint);
         if ((res = writen(mwpipe[1], &(incoming_request.fd_cleint), sizeof(int))) == -1)
@@ -1038,7 +1110,7 @@ static void *worker_func(void *args)
         printf("wrote on pipe\n");
     }
 
-    return NULL;
+    pthread_exit((void *)NULL);
 }
 
 char *conc(size_t size1, char const *str1, char const *str2)

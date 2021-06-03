@@ -297,7 +297,6 @@ int perform(Client_setup setup, LList *request_commands)
                     /* in order to test appendToFile */
                     if (errno == FILE_ALREADY_EXISTS)
                         appendToFile(abs_path, "   >>>hey hey hey sono un test<<<", 34, c_setup.ejected_buffer);
-
                 }
 
                 i++;
@@ -352,7 +351,6 @@ int perform(Client_setup setup, LList *request_commands)
                 {
                     /* parse file buffer and put it in a directory if
                    -d config is set, otherwise print out in stdout */
-                    printf(" ==> %s\n", (char *)(file_buffer));
 
                     if (c_setup.dirname_buffer != NULL)
                     {
@@ -373,6 +371,8 @@ int perform(Client_setup setup, LList *request_commands)
 
                         close(fd);
                     }
+                    else
+                        printf(" ==> %s\n", (char *)(file_buffer));
 
                     free(file_buffer);
                 }

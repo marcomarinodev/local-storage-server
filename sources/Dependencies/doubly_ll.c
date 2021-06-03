@@ -1,5 +1,10 @@
 #include "doubly_ll.h"
 
+int d_is_empty(struct dd_Node *node)
+{
+    return node == NULL;
+}
+
 /* Given a reference (pointer to pointer) to the head
    of a DLL and an int, appends a new node at the end  */
 void d_append(struct dd_Node **head_ref, int new_data)
