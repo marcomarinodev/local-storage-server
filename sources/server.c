@@ -42,11 +42,15 @@ static int is_sigquit = FALSE;
 static int is_sighup = FALSE;
 
 /* list of client_fd elements */
-static struct dd_Node *active_connections = NULL;
+static struct dd_Node *active_connections;
+static int dim = 0;
 static pthread_mutex_t ac_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 int main(int argc, char *argv[])
 {
+
+    active_connections = NULL;
+
     check_argc(argc);
 
     /* signal handling */
@@ -246,7 +250,7 @@ static void run_server(Server_setup *server_setup)
      * resume workers until they exit and free their tcbs with pthread_join, and of course
      * clean all of the objects inside the heap
     */
-    while (!ending_all)
+    while (ending_all != TRUE)
     {
         pthread_mutex_lock(&ac_mutex);
         rdset = active_set; /* preparo maschera per select */
@@ -297,15 +301,14 @@ static void run_server(Server_setup *server_setup)
                         /* append the new connection to active list */
                         d_append(&active_connections, fd_client);
 
-                        /* printing active connections */
-                        d_print(active_connections);
+                        dim++;
 
                         pthread_mutex_unlock(&ac_mutex);
 
                         if (fd_client > fd_num)
                             fd_num = fd_client;
 
-                        //   printf("\n((( %d is connected )))\n", fd_client);
+                        printf("\n((( %d is connected )))\n", fd_client);
                     }
                     else
                     { /* sock I/0 ready */
@@ -350,110 +353,134 @@ static void run_server(Server_setup *server_setup)
                                 pthread_mutex_lock(&ac_mutex);
 
                                 is_sighup = TRUE;
+
+                                printf("SIGHUP occurred!\n");
+
                                 close(fd_socket);
                                 FD_CLR(fd_socket, &active_set);
 
                                 /* if there are some active connections, then the server must complete their
                                  * requests, so we do another select loop,
                                 */
-                                if (d_is_empty(active_connections) == TRUE)
+                                if (dim == 0)
                                 {
                                     /* do what we did for SIGQUIT/SIGHUP */
-                                    ending_all = TRUE;
+                                    printf("active connections list is empty\n");
+                                    if (active_connections != NULL)
+                                        printf("FAILED INVARIANT => %d\n", active_connections->data);
 
                                     /* taking the lock of the requests before waking up asleep workers */
                                     pthread_mutex_lock(&pending_requests_mutex);
 
                                     is_sigquit = TRUE;
+
                                     pthread_cond_broadcast(&pending_requests_cond);
 
                                     pthread_mutex_unlock(&pending_requests_mutex);
-                                    pthread_mutex_lock(&ac_mutex);
+                                    pthread_mutex_unlock(&ac_mutex);
+
+                                    ending_all = TRUE;
 
                                     break;
                                 }
 
-                                pthread_mutex_lock(&ac_mutex);
+                                pthread_mutex_unlock(&ac_mutex);
                             }
-                        }
-
-                        pthread_mutex_unlock(&spipe_mutex);
-
-                        /* master worker pipe checking */
-                        pthread_mutex_lock(&mwpipe_mutex);
-
-                        /* pipe reading (re-listen to a client) */
-                        if (fd == mwpipe[0])
-                        {
-                            int res, new_desc;
-                            if ((res = readn(mwpipe[0], &new_desc, sizeof(int))) == -1)
-                            {
-                                perror("Read mw pipe error");
-                                exit(EXIT_FAILURE);
-                            }
-
-                            printf("<<<%d needs to be listened again>>>\n", new_desc);
-
-                            /* if a worker needs to write on pipe, it needs to find this variable at TRUE */
-                            can_pipe = 1;
-
-                            /* re-listen to the socket */
-                            FD_SET(new_desc, &active_set);
-
-                            /* update maximum fd */
-                            if (new_desc > fd_num)
-                                fd_num = new_desc;
-
-                            Pthread_cond_signal(&workers_done);
-                            pthread_mutex_unlock(&mwpipe_mutex);
                         }
                         else
-                        { /* normal request */
-                            pthread_mutex_unlock(&mwpipe_mutex);
-                            memset(&new_request, 0, sizeof(ServerRequest));
+                        {
+                            pthread_mutex_unlock(&spipe_mutex);
 
-                            int n_read = readn(fd, &new_request, sizeof(ServerRequest));
+                            /* master worker pipe checking */
+                            pthread_mutex_lock(&mwpipe_mutex);
 
-                            /* EOF in fd */
-                            if (n_read == 0)
+                            /* pipe reading (re-listen to a client) */
+                            if (fd == mwpipe[0])
                             {
-                                close(fd);
-
-                                pthread_mutex_lock(&ac_mutex);
-                                /* remove it from active connections */
-                                d_delete_with_key(&active_connections, fd);
-
-                                if (d_is_empty(active_connections) != TRUE)
+                                int res, new_desc;
+                                if ((res = readn(mwpipe[0], &new_desc, sizeof(int))) == -1)
                                 {
-                                    printf("\nactive connections after delete a connection\n");
-                                    d_print(active_connections);
+                                    perror("Read mw pipe error");
+                                    exit(EXIT_FAILURE);
                                 }
 
-                                printf("\n%d disconnected, printing the connections list\n", fd);
+                                printf("<<<%d needs to be listened again>>>\n", new_desc);
 
-                                FD_CLR(fd, &active_set);
+                                /* if a worker needs to write on pipe, it needs to find this variable at TRUE */
+                                can_pipe = 1;
 
-                                pthread_mutex_unlock(&ac_mutex);
+                                /* re-listen to the socket */
+                                FD_SET(new_desc, &active_set);
+
+                                /* update maximum fd */
+                                if (new_desc > fd_num)
+                                    fd_num = new_desc;
+
+                                Pthread_cond_signal(&workers_done);
+                                pthread_mutex_unlock(&mwpipe_mutex);
                             }
                             else
-                            {
-                                new_request.fd_cleint = fd;
+                            { /* normal request */
+                                pthread_mutex_unlock(&mwpipe_mutex);
+                                memset(&new_request, 0, sizeof(ServerRequest));
 
-                                /* suspending manager to listen this descriptor */
-                                pthread_mutex_lock(&ac_mutex);
-                                FD_CLR(fd, &active_set);
-                                pthread_mutex_unlock(&ac_mutex);
+                                int n_read = readn(fd, &new_request, sizeof(ServerRequest));
 
-                                printf(" --- INCOMING REQUEST ---\n");
-                                print_parsed_request(new_request);
+                                /* EOF in fd */
+                                if (n_read == 0)
+                                {
+                                    close(fd);
 
-                                // metti in coda
-                                Pthread_mutex_lock_(&pending_requests_mutex, "pending requests");
+                                    pthread_mutex_lock(&ac_mutex);
+                                    /* remove it from bitmap */
+                                    FD_CLR(fd, &active_set);
 
-                                enqueue(pending_requests, &new_request);
-                                Pthread_cond_signal(&pending_requests_cond);
+                                    /* remove it from active connections */
+                                    d_delete_with_key(&active_connections, fd);
+                                    dim--;
 
-                                Pthread_mutex_unlock_(&pending_requests_mutex, "pending requests");
+                                    if (dim == 0 && is_sighup == TRUE)
+                                    {
+                                        /* no connections anymore, shutdown the server */
+                                        printf("it was the last request, quitting\n");
+                                        ending_all = TRUE;
+
+                                        pthread_mutex_lock(&pending_requests_mutex);
+
+                                        is_sigquit = TRUE;
+
+                                        pthread_cond_broadcast(&pending_requests_cond);
+                                        pthread_mutex_unlock(&pending_requests_mutex);
+
+                                        pthread_mutex_unlock(&ac_mutex);
+
+                                        break;
+                                    }
+
+                                    printf("\n%d disconnected, printing the connections list\n", fd);
+
+                                    pthread_mutex_unlock(&ac_mutex);
+                                }
+                                else
+                                {
+                                    new_request.fd_cleint = fd;
+
+                                    /* suspending manager to listen this descriptor */
+                                    pthread_mutex_lock(&ac_mutex);
+                                    FD_CLR(fd, &active_set);
+                                    pthread_mutex_unlock(&ac_mutex);
+
+                                    printf(" --- INCOMING REQUEST ---\n");
+                                    print_parsed_request(new_request);
+
+                                    // metti in coda
+                                    Pthread_mutex_lock_(&pending_requests_mutex, "pending requests");
+
+                                    enqueue(pending_requests, &new_request);
+                                    Pthread_cond_signal(&pending_requests_cond);
+
+                                    Pthread_mutex_unlock_(&pending_requests_mutex, "pending requests");
+                                }
                             }
                         }
                     }

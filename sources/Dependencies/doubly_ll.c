@@ -77,20 +77,12 @@ void d_insertAfter(struct dd_Node *prev_node, int new_data)
 // from the given node
 void d_print(struct dd_Node *node)
 {
-    struct dd_Node *last;
+    struct dd_Node *curr;
     printf("\nTraversal in forward direction \n");
-    while (node != NULL)
+    while (curr != NULL)
     {
-        printf(" %d ", node->data);
-        last = node;
-        node = node->next;
-    }
-
-    printf("\nTraversal in reverse direction \n");
-    while (last != NULL)
-    {
-        printf(" %d ", last->data);
-        last = last->prev;
+        printf(" %d ", curr->data);
+        curr = curr->next;
     }
 }
 
@@ -99,7 +91,10 @@ void d_delete_node(struct dd_Node **head_ref, struct dd_Node *del)
 {
     /* base case */
     if (*head_ref == NULL || del == NULL)
+    {
+        printf("attempting to delete NULL\n");
         return;
+    }
 
     /* If node to be deleted is head node */
     if (*head_ref == del)
