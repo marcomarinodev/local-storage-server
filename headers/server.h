@@ -42,14 +42,6 @@
         exit(errno_copy);                   \
     }
 
-typedef struct _server_setup
-{
-    int n_workers;
-    int max_storage;
-    int max_files_instorage;
-    char **config_info;
-} Server_setup;
-
 typedef struct _status
 {
     int capacity;
@@ -69,7 +61,7 @@ void spawn_thread();
 
 static void *sigHandler(void *arg);
 
-static void run_server(Server_setup *server_setup);
+static void run_server(Setup *server_setup);
 
 static void *worker_func(void *args);
 
@@ -80,8 +72,6 @@ int select_lru_victims(size_t incoming_req_size, char *incoming_path);
 int lru(HashTable ht, char *oldest_path, char *incoming_path);
 
 char *conc(size_t size1, char const *str1, char const *str2);
-
-void save_setup(Server_setup **setup);
 
 void clean_all(pthread_t **workers_tid, int *fd_socket, int *fd_client);
 

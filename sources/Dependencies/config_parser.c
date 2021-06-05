@@ -1,54 +1,101 @@
 #include "config_parser.h"
 
-/**
- * Il file config è composto da CONFIG_ROWS righe con un ordine preciso:
- * - socket path [0]
- * - numero di workers [1]
- * - dimensione massima del server [2] (in bytes)
- * - numero massimo di file [3]
-*/
-
-void parse_config(char *pathname, char ***parsed_config_info, int config_rows)
+int parse_config(Setup *setup_ref, char *config_path)
 {
-
-    int max_n_of_characters = 80;
-    char line_buffer[max_n_of_characters];
-    FILE *fp = fopen(pathname, "r");
+    char line[MAX_PATHNAME];
+    FILE *fp = fopen(config_path, "r");
 
     if (fp == NULL)
     {
-        perror("fopen parse_config");
-        exit(EXIT_FAILURE);
+        perror("cannot open the config_path in parse_config");
+        errno = PARSE_CONFIG_ERR;
+        return -1;
     }
 
-    *parsed_config_info = malloc(config_rows * sizeof(char *));
-
-    if (!*parsed_config_info)
+    if (setup_ref == NULL)
     {
-        fprintf(stderr, "Error allocating array of strings (config) \n");
-        return;
+        perror("setup_ref is NULL in parse_config");
+        errno = PARSE_CONFIG_ERR;
+        return -1;
     }
 
-    for (int i = 0; i < config_rows; i++)
+    /* server socket name */
+    if (fscanf(fp, "%s\n", line) != 0)
+        strcpy(setup_ref->server_socket_pathname, line);
+    else
     {
-        /* Get the first line of the file */
-        if (fgets(line_buffer, max_n_of_characters, fp) == NULL)
+        perror("cannot read server_socket line in config file");
+        errno = PARSE_CONFIG_ERR;
+        return -1;
+    }
+
+    /* number of workers */
+    if (fscanf(fp, "%s\n", line) != 0)
+    {
+        setup_ref->n_workers = str_toint(line);
+
+        if (setup_ref->n_workers <= 0)
         {
-            fprintf(stderr, "Error getting config line '%s'\n", pathname);
-            return;
+            perror("invalid number of workers");
+            errno = PARSE_CONFIG_ERR;
+            return -1;
         }
+    }
+    else
+    {
+        perror("cannot read number of workers line in config file");
+        errno = PARSE_CONFIG_ERR;
+        return -1;
+    }
 
-        /* line_buffer => parsed_config_info */
-        (*parsed_config_info)[i] = malloc(80 * sizeof(char));
+    /* server capacity */
+    if (fscanf(fp, "%s\n", line) != 0)
+    {
+        setup_ref->max_storage = str_toint(line);
 
-        if (!(*parsed_config_info)[i])
+        if (setup_ref->max_storage < 0)
         {
-            fprintf(stderr, "Error allocating config string\n");
-            exit(EXIT_FAILURE);
+            perror("invalid server capacity");
+            errno = PARSE_CONFIG_ERR;
+            return -1;
         }
+    }
+    else
+    {
+        perror("cannot read server capacity line in config file");
+        errno = PARSE_CONFIG_ERR;
+        return -1;
+    }
 
-        strncpy((*parsed_config_info)[i], line_buffer, strlen(line_buffer) + 1);
+    /* max number of files */
+    if (fscanf(fp, "%s\n", line) != 0)
+    {
+        setup_ref->max_files_instorage = str_toint(line);
+
+        if (setup_ref->max_files_instorage <= 0)
+        {
+            perror("invalid max number of files");
+            errno = PARSE_CONFIG_ERR;
+            return -1;
+        }
+    }
+    else
+    {
+        perror("cannot read max number of files line in config file");
+        errno = PARSE_CONFIG_ERR;
+        return -1;
+    }
+
+    /* log pathname */
+    if (fscanf(fp, "%s\n", line) != 0)
+        strcpy(setup_ref->log_path, line);
+    else
+    {
+        perror("cannot read log pathname line in config file");
+        errno = PARSE_CONFIG_ERR;
+        return -1;
     }
 
     fclose(fp);
+    return 0;
 }

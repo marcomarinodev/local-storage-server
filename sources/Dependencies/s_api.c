@@ -17,6 +17,7 @@ int openConnection(const char *sockname, int msec, const struct timespec abstime
 
     time(&rawtime);
 
+    printf("first connection attempt at %s with fd = %d\n", sockname, fd_socket);
     while (connect(fd_socket, (struct sockaddr *)&sa, sizeof(sa)) == -1)
     {
         if (errno == ENOENT)
@@ -32,6 +33,11 @@ int openConnection(const char *sockname, int msec, const struct timespec abstime
             time(&rawtime);
 
             usleep(msec * 1000);
+        }
+        else
+        {
+            printf("server is not online\n");
+            return -1;
         }
     }
 

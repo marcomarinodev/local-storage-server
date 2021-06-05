@@ -21,11 +21,14 @@ server: $(server_deps)
 	$(CC) $(INCLUDES) $(STD_FLAGS) sources/server.c -g -o server -Wl,-rpath,./libs -L ./libs -lserv -lapi $(THREAD_FLAGS)
 
 # Libraries
-libs/libds.so: $(O_FOLDER)/queue.o $(O_FOLDER)/linked_list.o $(O_FOLDER)/pthread_custom.o $(O_FOLDER)/config_parser.o
+libs/libds.so: $(O_FOLDER)/queue.o $(O_FOLDER)/linked_list.o $(O_FOLDER)/pthread_custom.o 
 	$(CC) -shared -o libs/libds.so $^
 
-libs/libserv.so: $(O_FOLDER)/queue.o $(O_FOLDER)/linked_list.o $(O_FOLDER)/ht.o $(O_FOLDER)/pthread_custom.o $(O_FOLDER)/config_parser.o $(O_FOLDER)/doubly_ll.o
+libs/libserv.so: $(O_FOLDER)/queue.o $(O_FOLDER)/linked_list.o $(O_FOLDER)/ht.o $(O_FOLDER)/pthread_custom.o $(O_FOLDER)/utility.o $(O_FOLDER)/config_parser.o $(O_FOLDER)/doubly_ll.o
 	$(CC) -shared -o libs/libserv.so $^
+
+$(O_FOLDER)/utility.o:
+	$(CC) $(STDC) $(INCLUDES) $(STD_FLAGS) $(DEPS_FOLDER)/utility.c -g -c -fPIC -o $@
 
 $(O_FOLDER)/config_parser.o:
 	$(CC) $(STDC) $(INCLUDES) $(STD_FLAGS) $(DEPS_FOLDER)/config_parser.c -g -c -fPIC -o $@
@@ -60,4 +63,4 @@ cleanall:
 	-rm -f expelled_files/*
 	-rm -f build/objs/*.o
 	-rm -f libs/*.so
-	-rm /tmp/server_sock1
+	-rm /tmp/server_sock

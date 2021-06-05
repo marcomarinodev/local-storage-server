@@ -48,7 +48,6 @@ static pthread_mutex_t ac_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 int main(int argc, char *argv[])
 {
-
     active_connections = NULL;
 
     check_argc(argc);
@@ -77,10 +76,18 @@ int main(int argc, char *argv[])
         abort();
     }
 
-    Server_setup *server_setup = (Server_setup *)malloc(sizeof(Server_setup));
+    Setup *server_setup = (Setup *)malloc(sizeof(Setup));
 
-    parse_config(argv[1], &(server_setup->config_info), CONFIG_ROWS);
-    save_setup(&server_setup);
+    if (parse_config(server_setup, argv[1]) == -1)
+    {
+        printf("%d", errno);
+        exit(EXIT_FAILURE);
+    }
+
+    // Server_setup *server_setup = (Server_setup *)malloc(sizeof(Server_setup));
+
+    // parse_config(argv[1], &(server_setup->config_info), CONFIG_ROWS);
+    // save_setup(&server_setup);
 
     pending_requests = createQueue(sizeof(ServerRequest));
 
@@ -199,7 +206,7 @@ void spawn_thread(int index)
     }
 }
 
-static void run_server(Server_setup *server_setup)
+static void run_server(Setup *server_setup)
 {
     struct sockaddr_un sa;
 
@@ -211,7 +218,7 @@ static void run_server(Server_setup *server_setup)
 
     memset(&sa, 0, sizeof(sa));
     sa.sun_family = AF_UNIX;
-    strcpy(sa.sun_path, server_setup->config_info[0]);
+    strcpy(sa.sun_path, server_setup->server_socket_pathname);
 
     fd_socket = socket(AF_UNIX, SOCK_STREAM, 0);
     // unlink(sa.sun_path);
@@ -532,13 +539,6 @@ static void run_server(Server_setup *server_setup)
         Pthread_join(workers_tid[i], NULL);
     }
 
-    for (int i = 0; i < 4; i++)
-    {
-        printf("\n<<<Freeing config_info row no.%d>>>\n", i);
-        free(server_setup->config_info[i]);
-    }
-
-    free(server_setup->config_info);
     free(workers_tid);
     free(attributes);
     free(server_setup);
@@ -1231,14 +1231,6 @@ void clean_all(pthread_t **workers_tid, int *fd_socket, int *fd_client)
 
     close((*fd_socket));
     close((*fd_client));
-}
-
-void save_setup(Server_setup **setup)
-{
-    (*setup)->config_info[0][strlen((*setup)->config_info[0]) - 1] = '1';
-    (*setup)->n_workers = atoi((*setup)->config_info[1]);
-    (*setup)->max_storage = atoi((*setup)->config_info[2]);
-    (*setup)->max_files_instorage = atoi((*setup)->config_info[3]);
 }
 
 void print_parsed_request(ServerRequest parsed_request)
