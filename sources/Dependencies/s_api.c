@@ -311,7 +311,6 @@ int writeFile(const char *pathname, const char *dirname)
     close(fd);
     /* file scan end */
 
-
     printf("FILE TO SEND = %s WITH SIZE %ld\n", request.content, request.size);
 
     int sending_err = 0;

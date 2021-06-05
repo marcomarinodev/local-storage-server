@@ -46,6 +46,10 @@ static struct dd_Node *active_connections;
 static int dim = 0;
 static pthread_mutex_t ac_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+/* log file */
+FILE* log = NULL;
+pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 int main(int argc, char *argv[])
 {
     active_connections = NULL;
@@ -84,10 +88,7 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    // Server_setup *server_setup = (Server_setup *)malloc(sizeof(Server_setup));
-
-    // parse_config(argv[1], &(server_setup->config_info), CONFIG_ROWS);
-    // save_setup(&server_setup);
+    log_init(server_setup->log_path);
 
     pending_requests = createQueue(sizeof(ServerRequest));
 
@@ -266,24 +267,24 @@ static void run_server(Setup *server_setup)
         struct timeval tv = {1, 0};
 
         if (select(fd_num + 1, &rdset, NULL, NULL, &tv) == -1)
-        { /* gest errore */
+        { 
             perror("select");
             exit(EXIT_FAILURE);
         }
         else
         {
-            printf("$$$ select (fd_set dim = %d):\n", fd_num);
-            for (fd = 0; fd <= fd_num; fd++)
-            {
-                if (FD_ISSET(fd, &rdset))
-                    printf(" %d ", fd);
-                else
-                    printf("0");
-            }
+            // printf("$$$ select (fd_set dim = %d):\n", fd_num);
+            // for (fd = 0; fd <= fd_num; fd++)
+            // {
+            //     if (FD_ISSET(fd, &rdset))
+            //         printf(" %d ", fd);
+            //     else
+            //         printf("0");
+            // }
 
-            printf("\n");
+            // printf("\n");
 
-            printf("$$$ ciclo bitmap descrittori (fd_set dim = %d):\n", fd_num);
+            // printf("$$$ ciclo bitmap descrittori (fd_set dim = %d):\n", fd_num);
             for (fd = 0; fd <= fd_num; fd++)
             {
                 if (FD_ISSET(fd, &rdset))
@@ -292,14 +293,14 @@ static void run_server(Setup *server_setup)
                     printf("0");
 
                 /* descriptor is ready */
-                printf("$$$ controllo indice %d[set=%d]\n", fd, FD_ISSET(fd, &rdset));
+                // printf("$$$ controllo indice %d[set=%d]\n", fd, FD_ISSET(fd, &rdset));
                 if (FD_ISSET(fd, &rdset))
                 {
                     /* listen socket ready ==> accept is not blocking */
                     if (fd == fd_socket)
                     {
                         fd_client = accept(fd_socket, NULL, 0);
-                        //     printf("\nil client con fd = %d si sta connettendo\n", fd_client);
+                            printf("\nil client con fd = %d si sta connettendo\n", fd_client);
 
                         pthread_mutex_lock(&ac_mutex);
 
@@ -411,7 +412,7 @@ static void run_server(Setup *server_setup)
                                     exit(EXIT_FAILURE);
                                 }
 
-                                printf("<<<%d needs to be listened again>>>\n", new_desc);
+                                printf("\n%d needs to be listened again\n", new_desc);
 
                                 /* if a worker needs to write on pipe, it needs to find this variable at TRUE */
                                 can_pipe = 1;
@@ -449,7 +450,7 @@ static void run_server(Setup *server_setup)
                                     if (dim == 0 && is_sighup == TRUE)
                                     {
                                         /* no connections anymore, shutdown the server */
-                                        printf("it was the last request, quitting\n");
+                                        printf("\nit was the last request, quitting\n");
                                         ending_all = TRUE;
 
                                         pthread_mutex_lock(&pending_requests_mutex);
@@ -1220,6 +1221,13 @@ int lru(HashTable ht, char *oldest_path, char *incoming_path)
     }
 
     return found;
+}
+
+int log_init(char *log_pathname)
+{
+    printf("strlen of log pathname = %ld\n", strlen(log_pathname));
+
+    return 0;
 }
 
 void clean_all(pthread_t **workers_tid, int *fd_socket, int *fd_client)

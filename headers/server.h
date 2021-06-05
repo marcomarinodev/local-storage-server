@@ -59,6 +59,8 @@ void check_argc(int argc);
 
 void spawn_thread();
 
+int log_init(char *log_pathname);
+
 static void *sigHandler(void *arg);
 
 static void run_server(Setup *server_setup);
