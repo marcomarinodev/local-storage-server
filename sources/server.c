@@ -47,7 +47,7 @@ static int dim = 0;
 static pthread_mutex_t ac_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /* log file */
-FILE* log = NULL;
+FILE *log = NULL;
 pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 int main(int argc, char *argv[])
@@ -267,7 +267,7 @@ static void run_server(Setup *server_setup)
         struct timeval tv = {1, 0};
 
         if (select(fd_num + 1, &rdset, NULL, NULL, &tv) == -1)
-        { 
+        {
             perror("select");
             exit(EXIT_FAILURE);
         }
@@ -300,7 +300,7 @@ static void run_server(Setup *server_setup)
                     if (fd == fd_socket)
                     {
                         fd_client = accept(fd_socket, NULL, 0);
-                            printf("\nil client con fd = %d si sta connettendo\n", fd_client);
+                        printf("\nil client con fd = %d si sta connettendo\n", fd_client);
 
                         pthread_mutex_lock(&ac_mutex);
 
@@ -639,6 +639,14 @@ static void *worker_func(void *args)
                         ht_insert(&storage_ht, new, key);
 
                         response.code = O_CREATE_SUCCESS;
+
+                        pthread_mutex_lock(&server_stat_mtx);
+
+                        // server_stat.actual_capacity += incoming_request.size;
+                        server_stat.actual_max_files++;
+
+                        pthread_mutex_unlock(&server_stat_mtx);
+
                         Pthread_mutex_unlock(&storage_mutex, pthread_self(), "storage");
                     }
                     else
@@ -679,54 +687,33 @@ static void *worker_func(void *args)
                         /* in order to deselect rec from the LRU search ==> rec->is_new = TRUE */
                         rec->is_new = TRUE;
 
-                        int n_to_eject = select_lru_victims(incoming_request.size, incoming_request.pathname);
+                        /* lru check */
+                        int n_to_eject;
+                        FRecord *files_to_send = select_lru_victims(incoming_request.size, incoming_request.pathname, &n_to_eject);
+
                         response.code = n_to_eject;
+                        printf("£££ sending response.code = %d\n", response.code);
                         writen(incoming_request.fd_cleint, &response, sizeof(response));
 
-                        /* sending (if exist) file deleted by lru algo */
-                        /* foreach row in ht */
-                        for (int row = 0; row < storage_ht.size; row++)
+                        /* now the server knows which files to send */
+                        /* so at the end of a single cycle a writen will be made in order to
+                     * send the ejected file
+                    */
+
+                        for (int i = 0; i < n_to_eject; i++)
                         {
+                            Response file_response;
+                            memset(&file_response, 0, sizeof(file_response));
 
-                            if (n_to_eject == 0)
-                            {
-                                printf("\n<<<no more files to eject>>>\n");
-                                break;
-                            }
+                            file_response.content_size = files_to_send[i].size;
 
-                            /* for each file record in this row */
-                            for (int index = 0; index < storage_ht.lists[row].length; index++)
-                            {
-                                /* current record */
-                                FRecord *r = (FRecord *)LL_get(storage_ht.lists[row], index);
+                            printf("sizeof(rec->content) = %ld\n", files_to_send[i].size);
 
-                                Response file_response;
-                                memset(&file_response, 0, sizeof(file_response));
+                            strncpy(file_response.path, files_to_send[i].pathname, strlen(files_to_send[i].pathname) + 1);
+                            memcpy(file_response.content, files_to_send[i].content, files_to_send[i].size);
 
-                                if (r != NULL)
-                                {
-                                    if (r->is_locked == FALSE && r->is_victim == TRUE)
-                                    {
-                                        printf(">>>I found what I have to delete<<<\n");
-
-                                        file_response.content_size = r->size;
-
-                                        printf("sizeof(rec->content) = %ld\n", rec->size);
-
-                                        strncpy(file_response.path, r->pathname, strlen(r->pathname) + 1);
-                                        memcpy(file_response.content, r->content, r->size);
-
-                                        printf("sending file...\n");
-                                        writen(incoming_request.fd_cleint, &file_response, sizeof(file_response));
-
-                                        server_stat.actual_capacity -= r->size;
-                                        server_stat.actual_max_files--;
-                                        ht_delete(&storage_ht, r->pathname);
-
-                                        n_to_eject--;
-                                    }
-                                }
-                            }
+                            printf("sending file...\n");
+                            writen(incoming_request.fd_cleint, &file_response, sizeof(file_response));
                         }
 
                         /* Having space to append... */
@@ -770,76 +757,58 @@ static void *worker_func(void *args)
             Response response;
             memset(&response, 0, sizeof(Response));
 
-            Pthread_mutex_lock(&storage_mutex, pthread_self(), "storage");
+            pthread_mutex_lock(&storage_mutex);
 
             time_t now = time(0);
 
             if (ht_exists(storage_ht, incoming_request.pathname))
             {
                 FRecord *rec = (FRecord *)ht_get(storage_ht, incoming_request.pathname);
+
+                pthread_mutex_unlock(&storage_mutex);
+
+                printf("file opened with O_CREATE exists and its path is: %s\n", rec->pathname);
+
                 if (rec->is_open == TRUE && rec->is_locked == TRUE)
                 {
+                    printf("attempting to write on file opened with O_CREATE\n");
                     /* use response.code as n_to_eject */
 
                     /* lru check */
-                    int n_to_eject = select_lru_victims(incoming_request.size, incoming_request.pathname);
+                    int n_to_eject;
+                    FRecord *files_to_send = select_lru_victims(incoming_request.size, incoming_request.pathname, &n_to_eject);
+
                     response.code = n_to_eject;
+
+                    printf("£££ sending response.code = %d\n", response.code);
                     writen(incoming_request.fd_cleint, &response, sizeof(response));
 
-                    /* now the server knows how many files need to be ejected */
+                    /* now the server knows which files to send */
                     /* so at the end of a single cycle a writen will be made in order to
                      * send the ejected file
                     */
 
-                    /* foreach row in ht */
-                    for (int row = 0; row < storage_ht.size; row++)
+                    for (int i = 0; i < n_to_eject; i++)
                     {
+                        Response file_response;
+                        memset(&file_response, 0, sizeof(file_response));
 
-                        if (n_to_eject == 0)
-                        {
-                            printf("\nnon ho file da espellere\n");
-                            break;
-                        }
+                        file_response.content_size = files_to_send[i].size;
 
-                        /* for each file record in this row */
-                        for (int index = 0; index < storage_ht.lists[row].length; index++)
-                        {
-                            /* current record */
-                            FRecord *r = (FRecord *)LL_get(storage_ht.lists[row], index);
+                        printf("sizeof(rec->content) = %ld\n", files_to_send[i].size);
 
-                            Response file_response;
-                            memset(&file_response, 0, sizeof(file_response));
+                        strncpy(file_response.path, files_to_send[i].pathname, strlen(files_to_send[i].pathname) + 1);
+                        memcpy(file_response.content, files_to_send[i].content, files_to_send[i].size);
 
-                            if (r != NULL)
-                            {
-                                if (r->is_locked == FALSE && r->is_victim == TRUE)
-                                {
-                                    printf(">>>I found what I have to delete<<<\n");
+                        printf("sending file...\n");
+                        writen(incoming_request.fd_cleint, &file_response, sizeof(file_response));
 
-                                    file_response.content_size = r->size;
-
-                                    printf("sizeof(rec->content) = %ld\n", rec->size);
-
-                                    strncpy(file_response.path, r->pathname, strlen(r->pathname) + 1);
-                                    memcpy(file_response.content, r->content, r->size);
-
-                                    printf("sending file...\n");
-                                    writen(incoming_request.fd_cleint, &file_response, sizeof(file_response));
-
-                                    server_stat.actual_capacity -= r->size;
-                                    server_stat.actual_max_files--;
-                                    ht_delete(&storage_ht, r->pathname);
-
-                                    n_to_eject--;
-                                }
-                            }
-                        }
+                        if (files_to_send[i].content != NULL)
+                            free(files_to_send[i].content);
                     }
 
-                    server_stat.actual_capacity += rec->size;
-                    server_stat.actual_max_files++;
-
-                    Pthread_mutex_unlock(&storage_mutex, pthread_self(), "storage");
+                    if (files_to_send != NULL)
+                        free(files_to_send);
 
                     Pthread_mutex_lock(&(rec->lock), pthread_self(), rec->pathname);
 
@@ -1022,8 +991,12 @@ static void *worker_func(void *args)
                         printf("\n<<<REMOVING %s>>>\n", incoming_request.pathname);
 
                         /* update server status */
+                        pthread_mutex_lock(&server_stat_mtx);
+                        
                         server_stat.actual_max_files--;
                         server_stat.actual_capacity -= rec->size;
+
+                        pthread_mutex_unlock(&server_stat_mtx);
 
                         ht_delete(&storage_ht, incoming_request.pathname);
 
@@ -1038,8 +1011,12 @@ static void *worker_func(void *args)
                     printf("\n<<<REMOVING %s>>>\n", incoming_request.pathname);
 
                     /* update server status */
+                    pthread_mutex_lock(&server_stat_mtx);
+
                     server_stat.actual_max_files--;
                     server_stat.actual_capacity -= rec->size;
+
+                    pthread_mutex_unlock(&server_stat_mtx);
 
                     ht_delete(&storage_ht, incoming_request.pathname);
                     response.code = REMOVE_FILE_SUCCESS;
@@ -1153,48 +1130,69 @@ char *conc(size_t size1, char const *str1, char const *str2)
     return result;
 }
 
-int select_lru_victims(size_t incoming_req_size, char *incoming_path)
+FRecord *select_lru_victims(size_t incoming_req_size, char *incoming_path, int *n_removed_files)
 {
-    size_t sim_storage_size = server_stat.actual_capacity;
-    int sim_storage_count = server_stat.actual_max_files;
+    pthread_mutex_lock(&server_stat_mtx);
+
+    if (server_stat.actual_max_files == 0)
+    {
+        pthread_mutex_unlock(&server_stat_mtx);
+        return NULL;
+    }
+
+    FRecord *victims = (FRecord *)malloc(server_stat.actual_max_files * sizeof(FRecord));
+
+    server_stat.actual_capacity += incoming_req_size;
+
     int n_to_eject = 0;
+
+    pthread_mutex_lock(&storage_mutex);
 
     /* making a cycle to determine how many files need to be ejected
                        to make space for the new file */
-    while ((incoming_req_size + sim_storage_size) > server_stat.capacity || (1 + sim_storage_count) > (server_stat.max_files))
+    printf("### Calling LRU Check ###\n");
+    printf("### server_stat.actual_capacity = %d ###\n", server_stat.actual_capacity);
+    printf("### server_stat.actual_max_files = %d ###\n", server_stat.actual_max_files);
+    while (((server_stat.actual_capacity > server_stat.capacity) && n_to_eject >= 0) || ((server_stat.actual_max_files > server_stat.max_files) && n_to_eject >= 0))
     {
-        char oldest_path[MAX_PATHNAME];
 
-        if (lru(storage_ht, oldest_path, incoming_path) == -1)
-        {
-            printf("\n<<<STORAGE IS EMPTY => FILE IS TOO BIG>>>");
-            return -1;
-        }
+        char *oldest_path = lru(storage_ht, incoming_path);
 
         printf("\n>>>victim selected: %s<<<\n", oldest_path);
 
-        FRecord *victim = (FRecord *)ht_get(storage_ht, oldest_path);
+        FRecord *cur_victim = (FRecord *)ht_get(storage_ht, oldest_path);
 
-        victim->is_victim = TRUE;
+        memcpy(&(victims[n_to_eject]), cur_victim, sizeof(*cur_victim));
 
-        printf("\n>>>sim actual storage size = %ld<<<\n", sim_storage_size);
-        sim_storage_size -= victim->size;
-        sim_storage_count--;
+        server_stat.actual_capacity -= cur_victim->size;
+
+        ht_delete(&storage_ht, oldest_path);
+
+        if (oldest_path != NULL)
+            free(oldest_path);
+
         n_to_eject++;
+        server_stat.actual_max_files--;
     }
 
-    return n_to_eject;
+    pthread_mutex_unlock(&storage_mutex);
+    pthread_mutex_unlock(&server_stat_mtx);
+
+    *n_removed_files = n_to_eject;
+
+    return victims;
 }
 
-int lru(HashTable ht, char *oldest_path, char *incoming_path)
+char *lru(HashTable ht, char *incoming_path)
 {
     if (storage_ht.size == 0)
-        return -1;
+        return NULL;
+
+    char *oldest_path = (char *)malloc(sizeof(char) * MAX_PATHNAME);
 
     /* most recent time */
     time_t oldest;
     time(&oldest);
-    int found = -1;
 
     /* for each row in ht */
     for (int row = 0; row < storage_ht.size; row++)
@@ -1209,18 +1207,17 @@ int lru(HashTable ht, char *oldest_path, char *incoming_path)
 
                 /* it could be the victim */
                 if ((difftime(oldest, rec->last_edit) > 0) &&
-                    (strncmp(rec->pathname, incoming_path, strlen(incoming_path)) != 0))
+                    (strcmp(rec->pathname, incoming_path) != 0))
                 {
                     /* found a later time than oldest */
                     oldest = rec->last_edit;
-                    strncpy(oldest_path, rec->pathname, strlen(rec->pathname) + 1);
-                    found = 1;
+                    strncpy(oldest_path, rec->pathname, MAX_PATHNAME);
                 }
             }
         }
     }
 
-    return found;
+    return oldest_path;
 }
 
 int log_init(char *log_pathname)

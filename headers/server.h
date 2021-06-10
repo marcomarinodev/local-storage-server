@@ -69,9 +69,9 @@ static void *worker_func(void *args);
 
 int update_fds(fd_set set, int fd_num);
 
-int select_lru_victims(size_t incoming_req_size, char *incoming_path);
+FRecord *select_lru_victims(size_t incoming_req_size, char *incoming_path, int *n_removed_files);
 
-int lru(HashTable ht, char *oldest_path, char *incoming_path);
+char *lru(HashTable ht, char *incoming_path);
 
 char *conc(size_t size1, char const *str1, char const *str2);
 

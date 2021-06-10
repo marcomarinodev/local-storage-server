@@ -190,6 +190,8 @@ int _getopt(LList *configs, LList *reqs, int argcount, char **_argv)
     free(opt_value);
     free(current_request);
 
+    sleep(1);
+
     return validate(*configs, *reqs);
 }
 
@@ -273,7 +275,6 @@ int perform(Client_setup setup, LList *request_commands)
 
                 if (open_res == 0)
                 {
-                    sleep(3);
                     if (writeFile(abs_path, c_setup.ejected_buffer) == 0)
                     {
                         printf("\nSuccessful write operation \n");

@@ -60,7 +60,7 @@ $(O_FOLDER)/s_api.o:
 cleanall:
 	@echo "Garbage Removal"
 	-rm -f read_files/*
-	-rm -f expelled_files/*
+	-rm -f expelled_dir/*
 	-rm -f build/objs/*.o
 	-rm -f libs/*.so
 	-rm /tmp/server_sock
