@@ -9,41 +9,54 @@
 /**
  * pthread_create with error checking
 */
-void Pthread_create(pthread_t *t, const pthread_attr_t *attr, void *(*function)(), void *arg);
+void safe_pcreate(pthread_t *t, const pthread_attr_t *attr, void *(*function)(), void *arg);
 
 /**
  * pthread_mutex_lock with error checking
 */
-void Pthread_mutex_lock(pthread_mutex_t *mutex, pid_t calling_thread, char *lock_name);
-void Pthread_mutex_lock_(pthread_mutex_t *mutex, char *lock_name);
+void safe_plock(pthread_mutex_t *mutex);
 
 /**
  * pthread_mutex_unlock with error checking
 */
-void Pthread_mutex_unlock(pthread_mutex_t *mutex, pid_t calling_thread, char *lock_name);
-void Pthread_mutex_unlock_(pthread_mutex_t *mutex, char *lock_name);
+void safe_punlock(pthread_mutex_t *mutex);
 
 /**
  * pthread_cond_wait with error checking
 */
-void Pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex);
+void safe_cwait(pthread_cond_t *cond, pthread_mutex_t *mutex);
 
 /**
  * pthread_cond_signal with error checking
 */
-void Pthread_cond_signal(pthread_cond_t *cond);
+void safe_csignal(pthread_cond_t *cond);
 
 /**
  * pthread_cond_broadcast with error checking
 */
-void Pthread_cond_broadcast(pthread_cond_t *cond);
+void safe_cbroadcast(pthread_cond_t *cond);
 
 /**
  * pthread_detach with error checking
 */
-void Pthread_detach(pthread_t t);
+void safe_pdetach(pthread_t t);
 
 /**
  * pthread_join with error checking
 */
-void Pthread_join(pthread_t t, void *status);
+void safe_pjoin(pthread_t t, void *status);
+
+/**
+ * pthread_attr_destroy with error checking
+*/
+void safe_pattr_destroy(pthread_attr_t attr);
+
+/**
+ * pthread_attr_init with error checking
+*/
+void safe_pattr_init(pthread_attr_t attr);
+
+/**
+ * pthread_mutex_init with error checking
+*/
+void safe_pmutex_init(pthread_mutex_t *mutex, const pthread_mutexattr_t *restrict attr);

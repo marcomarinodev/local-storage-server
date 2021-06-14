@@ -13,7 +13,8 @@
         "tuple": "c",
         "type_traits": "c",
         "utility": "c",
-        "linked_list.h": "c"
+        "linked_list.h": "c",
+        "pthread_custom.h": "c"
     },
     "C_Cpp.dimInactiveRegions": false
 }

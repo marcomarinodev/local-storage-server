@@ -33,14 +33,6 @@
 #define TRUE 1
 #define FALSE 0
 
-#define SYSCALL_EXIT(name, r, sc, str, ...) \
-    if ((r = sc) == -1)                     \
-    {                                       \
-        perror(#name);                      \
-        int errno_copy = errno;             \
-        print_error(str, __VA_ARGS__);      \
-        exit(errno_copy);                   \
-    }
 
 typedef struct _status
 {

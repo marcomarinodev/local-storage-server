@@ -52,82 +52,91 @@ pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 int main(int argc, char *argv[])
 {
-    active_connections = NULL;
-
     check_argc(argc);
+    
+    
 
     /* signal handling */
+    int error;
     sigset_t mask;
-    sigemptyset(&mask);
-    sigaddset(&mask, SIGINT);
-    sigaddset(&mask, SIGQUIT);
-    sigaddset(&mask, SIGHUP);
+    /* creating an empty signal mask */
+    SYSCALL_EXIT("sigemptyset", error, sigemptyset(&mask), "sigemptyset error", "");
 
-    if (pthread_sigmask(SIG_BLOCK, &mask, NULL) != 0)
-    {
-        fprintf(stderr, "\n<<<FATAL ERROR>>>\n");
-        abort();
-    }
+    /* Adding SIGINT, SIGQUIT, SIGHUP inside the mask */
+    SYSCALL_EXIT("sigaddset", error, sigaddset(&mask, SIGINT), "sigaddset error", "");
+    SYSCALL_EXIT("sigaddset", error, sigaddset(&mask, SIGQUIT), "sigaddset error", "");
+    SYSCALL_EXIT("sigaddset", error, sigaddset(&mask, SIGHUP), "sigaddset error", "");
 
-    /* sigpipe ignore */
+    /**
+     * The signal mask is the set of signals whose
+     * delivery is currently blocked for the caller.
+     * SIGBLOCK: The set of blocked signals is the union
+     * of the current set and the set argument.
+    */
+    SYSCALL_EXIT("pthread_sigmask", error, pthread_sigmask(SIG_BLOCK, &mask, NULL), "pthread_sigmask error", "");
+
+    /* sigpipe handler using SIG_IGN (sig ignore) */
     struct sigaction s;
     memset(&s, 0, sizeof(s));
     s.sa_handler = SIG_IGN;
 
-    if ((sigaction(SIGPIPE, &s, NULL)) == -1)
-    {
-        perror("<<<sigaction>>>");
-        abort();
-    }
+    /* set the action when SIGPIPE occurs */
+    SYSCALL_EXIT("sigaction", error, sigaction(SIGPIPE, &s, NULL), "sigaction error", "");
 
-    Setup *server_setup = (Setup *)malloc(sizeof(Setup));
+    /* allocating the struct that contains the server setup */
+    Setup *server_setup = (Setup *)safe_malloc(sizeof(Setup));
 
+    /* calling the config parser */
     if (parse_config(server_setup, argv[1]) == -1)
     {
         printf("%d", errno);
         exit(EXIT_FAILURE);
     }
 
-    log_init(server_setup->log_path);
-
-    pending_requests = createQueue(sizeof(ServerRequest));
-
+    /* server_setup init */
     server_stat.actual_capacity = 0;
     server_stat.actual_max_files = 0;
     server_stat.capacity = server_setup->max_storage;
     server_stat.max_files = server_setup->max_files_instorage;
 
+    /* initializing log file */
+    log_init(server_setup->log_path);
+
+    /** creating the pending requests queue where all workers will access
+      * to it in mutual exclusion.
+    */
+    pending_requests = createQueue(sizeof(ServerRequest));
+
+    /* creating the actual storage (as hash table ds) */
     ht_create(&storage_ht, 1 + (server_stat.capacity / 2));
 
-    workers_tid = (pthread_t *)malloc(sizeof(pthread_t) * server_setup->n_workers);
-    attributes = (pthread_attr_t *)malloc(sizeof(pthread_attr_t) * server_setup->n_workers);
+    /* array of workers tid ant their attributes */
+    workers_tid = (pthread_t *)safe_malloc(sizeof(pthread_t) * server_setup->n_workers);
+    attributes = (pthread_attr_t *)safe_malloc(sizeof(pthread_attr_t) * server_setup->n_workers);
 
     /* initialize the pipe in order to "unlock" the select
-     * in case of SIGINT, SIGHUP, SIGQUIT
+     * in case of SIGINT, SIGHUP, SIGQUIT and in case of 
+     * re-listening to a certain client descriptor.
     */
-    if (pipe(pfd) == -1)
-    {
-        perror("\n<<<PIPE CREATION ERROR>>>\n");
-        exit(EXIT_FAILURE);
-    }
-
-    if (pipe(mwpipe) == -1)
-    {
-        perror("\n<<<PIPE CREATION ERROR>>>\n");
-        exit(EXIT_FAILURE);
-    }
+    SYSCALL_EXIT("pipe", error, pipe(pfd), "pipe error", "");
+    SYSCALL_EXIT("pipe", error, pipe(mwpipe), "pipe error", "");
 
     /* thread to handle signals */
     pthread_t sighandler_thread;
 
-    Pthread_create(&sighandler_thread, NULL, sigHandler, &mask);
+    /* creating the signal handler thread */
+    safe_pcreate(&sighandler_thread, NULL, sigHandler, &mask);
 
+    /* declaring the active_connections queue (as doubly linked list) */
+    active_connections = NULL;
+
+    /* main server function that manages connections (manager) */
     run_server(server_setup);
 
-    /* waiting signal handler thread */
+    /* all heap data structures are freed inside run_server function */
+    /* join signal handler thread */
     printf("\n<<<Joining the signal thread>>>\n");
-    /* clean data structures */
-    Pthread_join(sighandler_thread, NULL);
+    safe_pjoin(sighandler_thread, NULL);
 
     return 0;
 }
@@ -135,19 +144,12 @@ int main(int argc, char *argv[])
 static void *sigHandler(void *arg)
 {
     sigset_t *set = (sigset_t *)arg;
-    int sig, r, res;
+    int sig, res;
 
-    r = sigwait(set, &sig);
-
-    if (r != 0)
-    {
-        errno = r;
-        perror("\n<<<FATAL ERROR 'sigwait>>>\n");
-        exit(EXIT_FAILURE);
-    }
+    sigwait(set, &sig);
 
     /* writing into the pipe which is the signal code */
-    pthread_mutex_lock(&spipe_mutex);
+    safe_plock(&spipe_mutex);
 
     /* delegating what to do to the manager */
     if ((res = writen(pfd[1], &sig, sizeof(int))) == -1)
@@ -156,19 +158,20 @@ static void *sigHandler(void *arg)
         exit(EXIT_FAILURE);
     }
 
-    pthread_mutex_unlock(&spipe_mutex);
+    safe_punlock(&spipe_mutex);
 
     return (void *)NULL;
 }
 
 void spawn_thread(int index)
 {
-
+    int error;
     sigset_t mask, oldmask;
-    sigemptyset(&mask);
-    sigaddset(&mask, SIGINT);
-    sigaddset(&mask, SIGQUIT);
-    sigaddset(&mask, SIGHUP);
+
+    SYSCALL_EXIT("sigemptyset", error, sigemptyset(&mask), "sigemptyset error", "");
+    SYSCALL_EXIT("sigaddset", error, sigaddset(&mask, SIGINT), "sigaddset error", "");
+    SYSCALL_EXIT("sigaddset", error, sigaddset(&mask, SIGQUIT), "sigaddset error", "");
+    SYSCALL_EXIT("sigaddset", error, sigaddset(&mask, SIGHUP), "sigaddset error", "");
 
     if (pthread_sigmask(SIG_BLOCK, &mask, &oldmask) != 0)
     {
@@ -260,9 +263,9 @@ static void run_server(Setup *server_setup)
     */
     while (ending_all != TRUE)
     {
-        pthread_mutex_lock(&ac_mutex);
+        safe_plock(&ac_mutex);
         rdset = active_set; /* preparo maschera per select */
-        pthread_mutex_unlock(&ac_mutex);
+        safe_punlock(&ac_mutex);
 
         struct timeval tv = {1, 0};
 
@@ -302,7 +305,7 @@ static void run_server(Setup *server_setup)
                         fd_client = accept(fd_socket, NULL, 0);
                         printf("\nil client con fd = %d si sta connettendo\n", fd_client);
 
-                        pthread_mutex_lock(&ac_mutex);
+                        safe_plock(&ac_mutex);
 
                         FD_SET(fd_client, &active_set);
 
@@ -311,7 +314,7 @@ static void run_server(Setup *server_setup)
 
                         dim++;
 
-                        pthread_mutex_unlock(&ac_mutex);
+                        safe_punlock(&ac_mutex);
 
                         if (fd_client > fd_num)
                             fd_num = fd_client;
@@ -321,7 +324,7 @@ static void run_server(Setup *server_setup)
                     else
                     { /* sock I/0 ready */
 
-                        pthread_mutex_lock(&spipe_mutex);
+                        safe_plock(&spipe_mutex);
 
                         if (fd == pfd[0])
                         {
@@ -334,7 +337,7 @@ static void run_server(Setup *server_setup)
                             }
 
                             FD_CLR(pfd[0], &active_set);
-                            pthread_mutex_unlock(&spipe_mutex);
+                            safe_punlock(&spipe_mutex);
 
                             /* case if signal is SIGINT or SIGQUIT */
                             /* what we have to do is simply close all active connections
@@ -344,12 +347,12 @@ static void run_server(Setup *server_setup)
                             {
                                 ending_all = TRUE;
                                 /* taking the lock of the requests before waking up asleep workers */
-                                pthread_mutex_lock(&pending_requests_mutex);
+                                safe_plock(&pending_requests_mutex);
 
                                 is_sigquit = TRUE;
                                 pthread_cond_broadcast(&pending_requests_cond);
 
-                                pthread_mutex_unlock(&pending_requests_mutex);
+                                safe_punlock(&pending_requests_mutex);
                                 break;
                             }
                             else if (sig == SIGHUP)
@@ -358,7 +361,7 @@ static void run_server(Setup *server_setup)
                                  * and clear its bit inside the bitmap. We also need the mutex
                                  * of active connections d_list in order to check if it is free.
                                 */
-                                pthread_mutex_lock(&ac_mutex);
+                                safe_plock(&ac_mutex);
 
                                 is_sighup = TRUE;
 
@@ -378,29 +381,29 @@ static void run_server(Setup *server_setup)
                                         printf("FAILED INVARIANT => %d\n", active_connections->data);
 
                                     /* taking the lock of the requests before waking up asleep workers */
-                                    pthread_mutex_lock(&pending_requests_mutex);
+                                    safe_plock(&pending_requests_mutex);
 
                                     is_sigquit = TRUE;
 
                                     pthread_cond_broadcast(&pending_requests_cond);
 
-                                    pthread_mutex_unlock(&pending_requests_mutex);
-                                    pthread_mutex_unlock(&ac_mutex);
+                                    safe_punlock(&pending_requests_mutex);
+                                    safe_punlock(&ac_mutex);
 
                                     ending_all = TRUE;
 
                                     break;
                                 }
 
-                                pthread_mutex_unlock(&ac_mutex);
+                                safe_punlock(&ac_mutex);
                             }
                         }
                         else
                         {
-                            pthread_mutex_unlock(&spipe_mutex);
+                            safe_punlock(&spipe_mutex);
 
                             /* master worker pipe checking */
-                            pthread_mutex_lock(&mwpipe_mutex);
+                            safe_plock(&mwpipe_mutex);
 
                             /* pipe reading (re-listen to a client) */
                             if (fd == mwpipe[0])
@@ -424,12 +427,12 @@ static void run_server(Setup *server_setup)
                                 if (new_desc > fd_num)
                                     fd_num = new_desc;
 
-                                Pthread_cond_signal(&workers_done);
-                                pthread_mutex_unlock(&mwpipe_mutex);
+                                safe_csignal(&workers_done);
+                                safe_punlock(&mwpipe_mutex);
                             }
                             else
                             { /* normal request */
-                                pthread_mutex_unlock(&mwpipe_mutex);
+                                safe_punlock(&mwpipe_mutex);
                                 memset(&new_request, 0, sizeof(ServerRequest));
 
                                 int n_read = readn(fd, &new_request, sizeof(ServerRequest));
@@ -439,7 +442,7 @@ static void run_server(Setup *server_setup)
                                 {
                                     close(fd);
 
-                                    pthread_mutex_lock(&ac_mutex);
+                                    safe_plock(&ac_mutex);
                                     /* remove it from bitmap */
                                     FD_CLR(fd, &active_set);
 
@@ -453,41 +456,41 @@ static void run_server(Setup *server_setup)
                                         printf("\nit was the last request, quitting\n");
                                         ending_all = TRUE;
 
-                                        pthread_mutex_lock(&pending_requests_mutex);
+                                        safe_plock(&pending_requests_mutex);
 
                                         is_sigquit = TRUE;
 
                                         pthread_cond_broadcast(&pending_requests_cond);
-                                        pthread_mutex_unlock(&pending_requests_mutex);
+                                        safe_punlock(&pending_requests_mutex);
 
-                                        pthread_mutex_unlock(&ac_mutex);
+                                        safe_punlock(&ac_mutex);
 
                                         break;
                                     }
 
                                     printf("\n%d disconnected, printing the connections list\n", fd);
 
-                                    pthread_mutex_unlock(&ac_mutex);
+                                    safe_punlock(&ac_mutex);
                                 }
                                 else
                                 {
                                     new_request.fd_cleint = fd;
 
                                     /* suspending manager to listen this descriptor */
-                                    pthread_mutex_lock(&ac_mutex);
+                                    safe_plock(&ac_mutex);
                                     FD_CLR(fd, &active_set);
-                                    pthread_mutex_unlock(&ac_mutex);
+                                    safe_punlock(&ac_mutex);
 
                                     printf(" --- INCOMING REQUEST ---\n");
                                     print_parsed_request(new_request);
 
                                     // metti in coda
-                                    Pthread_mutex_lock_(&pending_requests_mutex, "pending requests");
+                                    safe_plock(&pending_requests_mutex);
 
                                     enqueue(pending_requests, &new_request);
-                                    Pthread_cond_signal(&pending_requests_cond);
+                                    safe_csignal(&pending_requests_cond);
 
-                                    Pthread_mutex_unlock_(&pending_requests_mutex, "pending requests");
+                                    safe_plock(&pending_requests_mutex);
                                 }
                             }
                         }
@@ -530,14 +533,14 @@ static void run_server(Setup *server_setup)
     for (int i = 0; i < server_setup->n_workers; i++)
     {
         printf("\n<<<invio una signal su pending_request>>>\n");
-        Pthread_cond_signal(&pending_requests_cond);
+        safe_csignal(&pending_requests_cond);
         sleep(1);
     }
 
     for (int i = 0; i < server_setup->n_workers; i++)
     {
         printf("\n<<<Joining %d worker thread>>>\n", i);
-        Pthread_join(workers_tid[i], NULL);
+        safe_pjoin(workers_tid[i], NULL);
     }
 
     free(workers_tid);
@@ -576,21 +579,21 @@ static void *worker_func(void *args)
 
     while (TRUE)
     {
-        Pthread_mutex_lock(&pending_requests_mutex, pthread_self(), "requests queue");
+        safe_plock(&pending_requests_mutex);
 
         if (isEmpty(pending_requests) == 1)
-            Pthread_cond_wait(&pending_requests_cond, &pending_requests_mutex);
+            safe_cwait(&pending_requests_cond, &pending_requests_mutex);
 
         if (is_sigquit == TRUE)
         {
             printf("\n<<<closing worker>>>\n");
-            Pthread_mutex_unlock(&pending_requests_mutex, pthread_self(), "requests queue");
+            safe_punlock(&pending_requests_mutex);
             break;
         }
 
         dequeue(pending_requests, &incoming_request);
 
-        Pthread_mutex_unlock(&pending_requests_mutex, pthread_self(), "requests queue");
+        safe_punlock(&pending_requests_mutex);
 
         printf(" --- WORKER REQUEST ---\n");
         print_parsed_request(incoming_request);
@@ -605,11 +608,11 @@ static void *worker_func(void *args)
             if (incoming_request.flags == (O_CREATE | O_LOCK))
             {
 
-                Pthread_mutex_lock(&storage_mutex, pthread_self(), "storage");
+                safe_plock(&storage_mutex);
 
                 if (ht_exists(storage_ht, incoming_request.pathname)) /* file already exists in storage */
                 {
-                    Pthread_mutex_unlock(&storage_mutex, pthread_self(), "storage");
+                    safe_punlock(&storage_mutex);
 
                     response.code = FILE_ALREADY_EXISTS;
                 }
@@ -618,17 +621,17 @@ static void *worker_func(void *args)
                     if (incoming_request.size <= server_stat.capacity)
                     { /* case when storage can contain the file sent in request */
 
-                        FRecord *new = (FRecord *)malloc(sizeof(FRecord));
+                        FRecord *new = (FRecord *)safe_malloc(sizeof(FRecord));
                         memset(new, 0, sizeof(FRecord));
 
-                        char *key = (char *)malloc(MAX_PATHNAME * sizeof(char));
+                        char *key = (char *)safe_malloc(MAX_PATHNAME * sizeof(char));
 
                         memset(key, 0, MAX_PATHNAME);
 
                         strncpy(new->pathname, incoming_request.pathname, MAX_PATHNAME);
                         strncpy(key, new->pathname, MAX_PATHNAME);
 
-                        pthread_mutex_init(&(new->lock), NULL);
+                        safe_pmutex_init(&(new->lock), NULL);
                         new->is_open = TRUE;
                         new->is_locked = TRUE;
                         new->is_new = TRUE;
@@ -640,18 +643,18 @@ static void *worker_func(void *args)
 
                         response.code = O_CREATE_SUCCESS;
 
-                        pthread_mutex_lock(&server_stat_mtx);
+                        safe_plock(&server_stat_mtx);
 
                         // server_stat.actual_capacity += incoming_request.size;
                         server_stat.actual_max_files++;
 
-                        pthread_mutex_unlock(&server_stat_mtx);
+                        safe_punlock(&server_stat_mtx);
 
-                        Pthread_mutex_unlock(&storage_mutex, pthread_self(), "storage");
+                        safe_punlock(&storage_mutex);
                     }
                     else
                     {
-                        Pthread_mutex_unlock(&storage_mutex, pthread_self(), "storage");
+                        safe_punlock(&storage_mutex);
                         response.code = STRG_OVERFLOW;
                         printf("\n<<<STORAGE IS EMPTY => FILE IS TOO BIG>>>");
                     }
@@ -666,7 +669,8 @@ static void *worker_func(void *args)
         case APPEND_FILE_REQ:
         {
             /* the append operation is atomic, so we need to take the lock of the server */
-            Pthread_mutex_lock(&storage_mutex, pthread_self(), "storage");
+            safe_plock(&storage_mutex);
+
             Response response;
             memset(&response, 0, sizeof(Response));
 
@@ -697,8 +701,8 @@ static void *worker_func(void *args)
 
                         /* now the server knows which files to send */
                         /* so at the end of a single cycle a writen will be made in order to
-                     * send the ejected file
-                    */
+                         * send the ejected file
+                        */
 
                         for (int i = 0; i < n_to_eject; i++)
                         {
@@ -727,7 +731,7 @@ static void *worker_func(void *args)
 
                         if (rec->content == NULL)
                         {
-                            rec->content = malloc(1 + (sizeof(char) * incoming_request.size));
+                            rec->content = safe_malloc(1 + (sizeof(char) * incoming_request.size));
                             memcpy(rec->content, incoming_request.content, incoming_request.size);
                         }
                         else
@@ -735,7 +739,7 @@ static void *worker_func(void *args)
                             printf("<<<appending>>>\n");
                             char *new_content = conc(old_size, rec->content, incoming_request.content);
                             free(rec->content);
-                            rec->content = malloc(1 + (sizeof(char) * (incoming_request.size + old_size)));
+                            rec->content = safe_malloc(1 + (sizeof(char) * (incoming_request.size + old_size)));
                             memcpy(rec->content, new_content, old_size + incoming_request.size);
                             free(new_content);
                         }
@@ -748,7 +752,7 @@ static void *worker_func(void *args)
             }
 
             writen(incoming_request.fd_cleint, &response, sizeof(response));
-            Pthread_mutex_unlock(&storage_mutex, pthread_self(), "storage");
+            safe_punlock(&storage_mutex);
         }
         break;
 
@@ -757,7 +761,7 @@ static void *worker_func(void *args)
             Response response;
             memset(&response, 0, sizeof(Response));
 
-            pthread_mutex_lock(&storage_mutex);
+            safe_plock(&storage_mutex);
 
             time_t now = time(0);
 
@@ -765,7 +769,7 @@ static void *worker_func(void *args)
             {
                 FRecord *rec = (FRecord *)ht_get(storage_ht, incoming_request.pathname);
 
-                pthread_mutex_unlock(&storage_mutex);
+                safe_punlock(&storage_mutex);
 
                 printf("file opened with O_CREATE exists and its path is: %s\n", rec->pathname);
 
@@ -810,24 +814,24 @@ static void *worker_func(void *args)
                     if (files_to_send != NULL)
                         free(files_to_send);
 
-                    Pthread_mutex_lock(&(rec->lock), pthread_self(), rec->pathname);
+                    safe_plock(&(rec->lock));
 
                     rec->is_locked = FALSE;
 
                     rec->last_edit = now;
                     if (rec->content == NULL)
-                        rec->content = malloc(1 + (sizeof(char) * incoming_request.size));
+                        rec->content = safe_malloc(1 + (sizeof(char) * incoming_request.size));
 
                     memset(rec->content, 0, 1 + incoming_request.size);
                     memcpy(rec->content, incoming_request.content, incoming_request.size);
 
-                    Pthread_mutex_unlock(&(rec->lock), pthread_self(), rec->pathname);
+                    safe_punlock(&(rec->lock));
 
                     response.code = WRITE_SUCCESS;
                 }
                 else
                 {
-                    Pthread_mutex_unlock(&storage_mutex, pthread_self(), "storage");
+                    safe_punlock(&storage_mutex);
                     /* before you do a write operation, you need to open the file */
                     printf("\n<<<The client must open the file using O_CREATE | O_LOCK flags>>>\n");
                     response.code = WRITE_FAILED;
@@ -835,7 +839,7 @@ static void *worker_func(void *args)
             }
             else /* the file does not exists, so I am going to return a write file error */
             {
-                Pthread_mutex_unlock(&storage_mutex, pthread_self(), "storage");
+                safe_punlock(&storage_mutex);
                 /* write file error due to the miss of the file that the client want to write on */
                 /* before you do a write operation, you need to open the file */
                 response.code = FAILED_FILE_SEARCH;
@@ -854,7 +858,7 @@ static void *worker_func(void *args)
             Response response;
             memset(&response, 0, sizeof(Response));
 
-            Pthread_mutex_lock(&storage_mutex, pthread_self(), "storage");
+            safe_plock(&storage_mutex);
 
             time_t now = time(0);
 
@@ -867,9 +871,9 @@ static void *worker_func(void *args)
                     /* sending the size of the content, in order to read exactly that size */
                     if (rec->content != NULL)
                     {
-                        Pthread_mutex_unlock(&storage_mutex, pthread_self(), "storage");
+                        safe_punlock(&storage_mutex);
 
-                        Pthread_mutex_lock(&(rec->lock), pthread_self(), rec->pathname);
+                        safe_plock(&(rec->lock));
 
                         response.code = READ_SUCCESS;
                         rec->last_edit = now;
@@ -878,23 +882,23 @@ static void *worker_func(void *args)
                         strncpy(response.path, incoming_request.pathname, strlen(incoming_request.pathname) + 1);
                         memcpy(response.content, rec->content, rec->size);
 
-                        Pthread_mutex_unlock(&(rec->lock), pthread_self(), rec->pathname);
+                        safe_punlock(&(rec->lock));
                     }
                     else
                     {
-                        Pthread_mutex_unlock(&storage_mutex, pthread_self(), "storage");
+                        safe_punlock(&storage_mutex);
                         printf("Rec->content is null\n");
                         response.code = FAILED_FILE_SEARCH;
                     }
                 }
                 else
                 {
-                    Pthread_mutex_unlock(&storage_mutex, pthread_self(), "storage");
+                    safe_punlock(&storage_mutex);
                 }
             }
             else
             {
-                Pthread_mutex_unlock(&storage_mutex, pthread_self(), "storage");
+                safe_punlock(&storage_mutex);
                 response.code = FAILED_FILE_SEARCH;
             }
 
@@ -910,7 +914,7 @@ static void *worker_func(void *args)
 
             int n = incoming_request.flags;
 
-            Pthread_mutex_lock(&storage_mutex, pthread_self(), "storage");
+            safe_plock(&storage_mutex);
             if (n < 0 || n > server_stat.actual_max_files)
             {
                 response.code = server_stat.actual_max_files;
@@ -966,7 +970,7 @@ static void *worker_func(void *args)
             }
 
             printf("\n<<<%d files succesfully sent!>>>\n", k);
-            Pthread_mutex_unlock(&storage_mutex, pthread_self(), "storage");
+            safe_punlock(&storage_mutex);
         }
 
         break;
@@ -976,7 +980,7 @@ static void *worker_func(void *args)
             Response response;
             memset(&response, 0, sizeof(response));
 
-            Pthread_mutex_lock(&storage_mutex, incoming_request.calling_client, "storage");
+            safe_plock(&storage_mutex);
 
             if (ht_exists(storage_ht, incoming_request.pathname))
             {
@@ -991,12 +995,12 @@ static void *worker_func(void *args)
                         printf("\n<<<REMOVING %s>>>\n", incoming_request.pathname);
 
                         /* update server status */
-                        pthread_mutex_lock(&server_stat_mtx);
-                        
+                        safe_plock(&server_stat_mtx);
+
                         server_stat.actual_max_files--;
                         server_stat.actual_capacity -= rec->size;
 
-                        pthread_mutex_unlock(&server_stat_mtx);
+                        safe_punlock(&server_stat_mtx);
 
                         ht_delete(&storage_ht, incoming_request.pathname);
 
@@ -1011,12 +1015,12 @@ static void *worker_func(void *args)
                     printf("\n<<<REMOVING %s>>>\n", incoming_request.pathname);
 
                     /* update server status */
-                    pthread_mutex_lock(&server_stat_mtx);
+                    safe_plock(&server_stat_mtx);
 
                     server_stat.actual_max_files--;
                     server_stat.actual_capacity -= rec->size;
 
-                    pthread_mutex_unlock(&server_stat_mtx);
+                    safe_punlock(&server_stat_mtx);
 
                     ht_delete(&storage_ht, incoming_request.pathname);
                     response.code = REMOVE_FILE_SUCCESS;
@@ -1025,7 +1029,7 @@ static void *worker_func(void *args)
             else
                 response.code = FAILED_FILE_SEARCH;
 
-            Pthread_mutex_unlock(&storage_mutex, incoming_request.calling_client, "storage");
+            safe_punlock(&storage_mutex);
             writen(incoming_request.fd_cleint, &response, sizeof(response));
         }
         break;
@@ -1035,14 +1039,14 @@ static void *worker_func(void *args)
             Response response;
             memset(&response, 0, sizeof(response));
 
-            Pthread_mutex_lock(&storage_mutex, incoming_request.calling_client, "storage");
+            safe_plock(&storage_mutex);
 
             if (ht_exists(storage_ht, incoming_request.pathname))
             {
                 FRecord *rec = (FRecord *)ht_get(storage_ht, incoming_request.pathname);
-                Pthread_mutex_unlock(&storage_mutex, incoming_request.calling_client, "storage");
+                safe_punlock(&storage_mutex);
 
-                Pthread_mutex_lock(&(rec->lock), pthread_self(), rec->pathname);
+                safe_plock(&(rec->lock));
                 if (rec->is_open == TRUE)
                 {
                     /* split in two cases */
@@ -1076,11 +1080,11 @@ static void *worker_func(void *args)
                     /* the file is not open, so is already closed */
                     response.code = IS_ALREADY_CLOSED;
                 }
-                Pthread_mutex_unlock(&(rec->lock), pthread_self(), rec->pathname);
+                safe_punlock(&(rec->lock));
             }
             else
             {
-                Pthread_mutex_unlock(&storage_mutex, incoming_request.calling_client, "storage");
+                safe_punlock(&storage_mutex);
                 /* the file we want to close does not exist */
                 response.code = FAILED_FILE_SEARCH;
             }
@@ -1095,7 +1099,7 @@ static void *worker_func(void *args)
         }
 
         /* writing into the pipe in order to tell the manager to re-listen to this fd */
-        pthread_mutex_lock(&mwpipe_mutex);
+        safe_plock(&mwpipe_mutex);
 
         while (can_pipe == 0)
             pthread_cond_wait(&workers_done, &mwpipe_mutex);
@@ -1110,7 +1114,7 @@ static void *worker_func(void *args)
             exit(EXIT_FAILURE);
         }
 
-        pthread_mutex_unlock(&mwpipe_mutex);
+        safe_punlock(&mwpipe_mutex);
 
         printf("wrote on pipe\n");
     }
@@ -1122,7 +1126,7 @@ char *conc(size_t size1, char const *str1, char const *str2)
 {
     size_t const l2 = strlen(str2);
 
-    char *result = malloc(size1 + l2 + 1);
+    char *result = safe_malloc(size1 + l2 + 1);
     if (!result)
         return result;
     memcpy(result, str1, size1);
@@ -1132,21 +1136,21 @@ char *conc(size_t size1, char const *str1, char const *str2)
 
 FRecord *select_lru_victims(size_t incoming_req_size, char *incoming_path, int *n_removed_files)
 {
-    pthread_mutex_lock(&server_stat_mtx);
+    safe_plock(&server_stat_mtx);
 
     if (server_stat.actual_max_files == 0)
     {
-        pthread_mutex_unlock(&server_stat_mtx);
+        safe_punlock(&server_stat_mtx);
         return NULL;
     }
 
-    FRecord *victims = (FRecord *)malloc(server_stat.actual_max_files * sizeof(FRecord));
+    FRecord *victims = (FRecord *)safe_malloc(server_stat.actual_max_files * sizeof(FRecord));
 
     server_stat.actual_capacity += incoming_req_size;
 
     int n_to_eject = 0;
 
-    pthread_mutex_lock(&storage_mutex);
+    safe_plock(&storage_mutex);
 
     /* making a cycle to determine how many files need to be ejected
                        to make space for the new file */
@@ -1175,8 +1179,8 @@ FRecord *select_lru_victims(size_t incoming_req_size, char *incoming_path, int *
         server_stat.actual_max_files--;
     }
 
-    pthread_mutex_unlock(&storage_mutex);
-    pthread_mutex_unlock(&server_stat_mtx);
+    safe_punlock(&storage_mutex);
+    safe_punlock(&server_stat_mtx);
 
     *n_removed_files = n_to_eject;
 
@@ -1188,7 +1192,7 @@ char *lru(HashTable ht, char *incoming_path)
     if (storage_ht.size == 0)
         return NULL;
 
-    char *oldest_path = (char *)malloc(sizeof(char) * MAX_PATHNAME);
+    char *oldest_path = (char *)safe_malloc(sizeof(char) * MAX_PATHNAME);
 
     /* most recent time */
     time_t oldest;
