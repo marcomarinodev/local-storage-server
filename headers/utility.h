@@ -3,6 +3,10 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
+#include <errno.h>
+#include <sys/types.h>
+#include <string.h>
 
 #define SYSCALL_EXIT(name, r, sc, str, ...) \
     if ((r = sc) == -1)                     \

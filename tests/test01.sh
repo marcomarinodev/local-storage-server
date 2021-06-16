@@ -7,10 +7,9 @@ pid=$!
 
 sleep 3s
 
-./client -f /tmp/server_sock -W test_src/images/orange.jpg -w test_src/txts -t 200 -p
-./client -f /tmp/server_sock -r test_src/txts/test_01.txt -t 200 -p
-./client -f /tmp/server_sock -c test_src/txts/test_01.txt,test_src/txts/test_03.txt -t 200 -p
-./client -f /tmp/server_sock -R -d read_files -p
+./client -f /tmp/server_sock -W test_src/images/orange.jpg -w test_src/txts -t 200
+./client -f /tmp/server_sock -r test_src/txts/test_01.txt -t 200
+./client -f /tmp/server_sock -d read_files -R
 ./client -h 
 
 sleep 1s

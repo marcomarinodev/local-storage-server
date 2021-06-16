@@ -51,11 +51,14 @@ $(O_FOLDER)/linked_list.o:
 $(O_FOLDER)/ht.o:
 	$(CC) $(STDC) $(INCLUDES) $(STD_FLAGS) $(DEPS_FOLDER)/ht.c -g -c -fPIC -o $@
 
-libs/libapi.so: $(O_FOLDER)/s_api.o
+libs/libapi.so: $(O_FOLDER)/s_api.o $(O_FOLDER)/utility.o
 	$(CC) -shared -o libs/libapi.so $^
 
 $(O_FOLDER)/s_api.o:
 	$(CC) $(INCLUDES) $(STD_FLAGS) $(DEPS_FOLDER)/s_api.c -g -c -fPIC -o $@
+
+$(O_FOLDER)/utility.o:
+	$(CC) $(STDC) $(INCLUDES) $(STD_FLAGS) $(DEPS_FOLDER)/utility.c -g -c -fPIC -o $@
 
 cleanall:
 	@echo "Garbage Removal"
@@ -64,3 +67,4 @@ cleanall:
 	-rm -f build/objs/*.o
 	-rm -f libs/*.so
 	-rm /tmp/server_sock
+	-rm -r ServerLogs

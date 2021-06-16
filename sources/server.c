@@ -47,14 +47,12 @@ static int dim = 0;
 static pthread_mutex_t ac_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /* log file */
-FILE *log = NULL;
+FILE *log_stream = NULL;
 pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 int main(int argc, char *argv[])
 {
     check_argc(argc);
-    
-    
 
     /* signal handling */
     int error;
@@ -102,17 +100,23 @@ int main(int argc, char *argv[])
     /* initializing log file */
     log_init(server_setup->log_path);
 
+    /* log starter message (in mutual exclusion) */
+    print_log("UNIX file-storage-server logger");
+    print_log("parsed config file");
+
     /** creating the pending requests queue where all workers will access
       * to it in mutual exclusion.
     */
     pending_requests = createQueue(sizeof(ServerRequest));
 
     /* creating the actual storage (as hash table ds) */
-    ht_create(&storage_ht, 1 + (server_stat.capacity / 2));
+    ht_create(&storage_ht, 1 + (server_stat.max_files / 2));
 
     /* array of workers tid ant their attributes */
     workers_tid = (pthread_t *)safe_malloc(sizeof(pthread_t) * server_setup->n_workers);
     attributes = (pthread_attr_t *)safe_malloc(sizeof(pthread_attr_t) * server_setup->n_workers);
+
+    print_log("%d has been created", server_setup->n_workers);
 
     /* initialize the pipe in order to "unlock" the select
      * in case of SIGINT, SIGHUP, SIGQUIT and in case of 
@@ -173,12 +177,7 @@ void spawn_thread(int index)
     SYSCALL_EXIT("sigaddset", error, sigaddset(&mask, SIGQUIT), "sigaddset error", "");
     SYSCALL_EXIT("sigaddset", error, sigaddset(&mask, SIGHUP), "sigaddset error", "");
 
-    if (pthread_sigmask(SIG_BLOCK, &mask, &oldmask) != 0)
-    {
-        fprintf(stderr, "\n<<<FATAL ERROR>>>\n");
-        close(fd_socket);
-        return;
-    }
+    SYSCALL_EXIT("pthread_sigmask", error, pthread_sigmask(SIG_BLOCK, &mask, &oldmask), "pthread_sigmask error", "");
 
     if (pthread_attr_init(&attributes[index]) != 0)
     {
@@ -195,39 +194,38 @@ void spawn_thread(int index)
         close(fd_socket);
         return;
     }
+
+    /* I didn't use safe_pcreate because I need to destroy attributes previously initializated */
     if (pthread_create(&workers_tid[index], &attributes[index], &worker_func, NULL) != 0)
     {
         fprintf(stderr, "pthread_create FALLITA");
-        pthread_attr_destroy(&attributes[index]);
+        safe_pattr_destroy(&attributes[index]);
         close(fd_socket);
         return;
     }
 
-    if (pthread_sigmask(SIG_SETMASK, &oldmask, NULL) != 0)
-    {
-        fprintf(stderr, "FATAL ERROR\n");
-        close(fd_socket);
-    }
+    SYSCALL_EXIT("pthread_sigmask", error, pthread_sigmask(SIG_BLOCK, &oldmask, NULL), "pthread_sigmask error", "");
 }
 
 static void run_server(Setup *server_setup)
 {
     struct sockaddr_un sa;
-
+    int error;
     int fd_client;
     int fd_num = 0;
     int fd, sig;
     ServerRequest new_request;
     fd_set rdset;
 
+    /* socket initialization */
+    unlink(server_setup->server_socket_pathname);
     memset(&sa, 0, sizeof(sa));
     sa.sun_family = AF_UNIX;
-    strcpy(sa.sun_path, server_setup->server_socket_pathname);
+    strncpy(sa.sun_path, server_setup->server_socket_pathname, strlen(server_setup->server_socket_pathname) + 1);
 
-    fd_socket = socket(AF_UNIX, SOCK_STREAM, 0);
-    // unlink(sa.sun_path);
-    bind(fd_socket, (struct sockaddr *)&sa, sizeof(sa));
-    listen(fd_socket, SOMAXCONN);
+    SYSCALL_EXIT("socket", fd_socket, socket(AF_UNIX, SOCK_STREAM, 0), "Socket init error", "");
+    SYSCALL_EXIT("binding", error, bind(fd_socket, (struct sockaddr *)&sa, sizeof(sa)), "bind error", "");
+    SYSCALL_EXIT("listen", error, listen(fd_socket, SOMAXCONN), "listen error", "");
 
     FD_ZERO(&active_set);
     FD_SET(fd_socket, &active_set);
@@ -252,7 +250,7 @@ static void run_server(Setup *server_setup)
     for (int i = 0; i < server_setup->n_workers; i++)
         spawn_thread(i);
 
-    printf("\n<<<Listen to requests, fd_socket = %d>>>\n", fd_socket);
+    print_log("Server is listening to incoming requests. The fd_socket is %d", fd_socket);
 
     /* in order to manage SIGHUP, i cannot get out from select, otherwise i'm not going be able
      * to listen to new requests from pending connected clients */
@@ -303,7 +301,6 @@ static void run_server(Setup *server_setup)
                     if (fd == fd_socket)
                     {
                         fd_client = accept(fd_socket, NULL, 0);
-                        printf("\nil client con fd = %d si sta connettendo\n", fd_client);
 
                         safe_plock(&ac_mutex);
 
@@ -319,7 +316,7 @@ static void run_server(Setup *server_setup)
                         if (fd_client > fd_num)
                             fd_num = fd_client;
 
-                        printf("\n((( %d is connected )))\n", fd_client);
+                        print_log("client %d is connected", fd_client);
                     }
                     else
                     { /* sock I/0 ready */
@@ -332,7 +329,7 @@ static void run_server(Setup *server_setup)
                             /* reading signal code from pipe */
                             if ((res = readn(pfd[0], &sig, sizeof(int))) == -1)
                             {
-                                perror("<<<FATAL ERROR while reading into the pipe>>>");
+                                print_log("(FATAL ERROR) pipe reading");
                                 exit(EXIT_FAILURE);
                             }
 
@@ -350,7 +347,10 @@ static void run_server(Setup *server_setup)
                                 safe_plock(&pending_requests_mutex);
 
                                 is_sigquit = TRUE;
-                                pthread_cond_broadcast(&pending_requests_cond);
+
+                                print_log("(SIGINT/SIGQUIT) waking up asleep workers");
+
+                                safe_cbroadcast(&pending_requests_cond);
 
                                 safe_punlock(&pending_requests_mutex);
                                 break;
@@ -365,7 +365,7 @@ static void run_server(Setup *server_setup)
 
                                 is_sighup = TRUE;
 
-                                printf("SIGHUP occurred!\n");
+                                print_log("(SIGHUP)");
 
                                 close(fd_socket);
                                 FD_CLR(fd_socket, &active_set);
@@ -375,8 +375,7 @@ static void run_server(Setup *server_setup)
                                 */
                                 if (dim == 0)
                                 {
-                                    /* do what we did for SIGQUIT/SIGHUP */
-                                    printf("active connections list is empty\n");
+                                    /* do what we did for SIGQUIT/SIGINT */
                                     if (active_connections != NULL)
                                         printf("FAILED INVARIANT => %d\n", active_connections->data);
 
@@ -385,7 +384,9 @@ static void run_server(Setup *server_setup)
 
                                     is_sigquit = TRUE;
 
-                                    pthread_cond_broadcast(&pending_requests_cond);
+                                    print_log("(SIGHUP) There are no more connections. Waking up asleep workers");
+
+                                    safe_cbroadcast(&pending_requests_cond);
 
                                     safe_punlock(&pending_requests_mutex);
                                     safe_punlock(&ac_mutex);
@@ -408,16 +409,17 @@ static void run_server(Setup *server_setup)
                             /* pipe reading (re-listen to a client) */
                             if (fd == mwpipe[0])
                             {
+                                print_log("Re-listen to %d descriptor", mwpipe[0]);
+
                                 int res, new_desc;
                                 if ((res = readn(mwpipe[0], &new_desc, sizeof(int))) == -1)
                                 {
-                                    perror("Read mw pipe error");
+                                    print_log("(FATAL ERROR) mwpipe error");
                                     exit(EXIT_FAILURE);
                                 }
 
-                                printf("\n%d needs to be listened again\n", new_desc);
-
                                 /* if a worker needs to write on pipe, it needs to find this variable at TRUE */
+                                print_log("Pipe is available for other workers");
                                 can_pipe = 1;
 
                                 /* re-listen to the socket */
@@ -460,7 +462,7 @@ static void run_server(Setup *server_setup)
 
                                         is_sigquit = TRUE;
 
-                                        pthread_cond_broadcast(&pending_requests_cond);
+                                        safe_cbroadcast(&pending_requests_cond);
                                         safe_punlock(&pending_requests_mutex);
 
                                         safe_punlock(&ac_mutex);
@@ -468,7 +470,7 @@ static void run_server(Setup *server_setup)
                                         break;
                                     }
 
-                                    printf("\n%d disconnected, printing the connections list\n", fd);
+                                    print_log("client %d is disconnected", fd);
 
                                     safe_punlock(&ac_mutex);
                                 }
@@ -481,8 +483,10 @@ static void run_server(Setup *server_setup)
                                     FD_CLR(fd, &active_set);
                                     safe_punlock(&ac_mutex);
 
-                                    printf(" --- INCOMING REQUEST ---\n");
-                                    print_parsed_request(new_request);
+                                    print_log("\nIncoming request:\n- calling client desc: %d\n- cmd: %s\n- path: %s",
+                                              new_request.fd_cleint,
+                                              cmd_type_to_string(new_request.cmd_type),
+                                              new_request.pathname);
 
                                     // metti in coda
                                     safe_plock(&pending_requests_mutex);
@@ -490,7 +494,7 @@ static void run_server(Setup *server_setup)
                                     enqueue(pending_requests, &new_request);
                                     safe_csignal(&pending_requests_cond);
 
-                                    safe_plock(&pending_requests_mutex);
+                                    safe_punlock(&pending_requests_mutex);
                                 }
                             }
                         }
@@ -501,8 +505,6 @@ static void run_server(Setup *server_setup)
             printf("\n");
         }
     }
-
-    printf("\n<<<SIGNAL RECEIVED>>>\n");
 
     /* close all connections inside the active_connections LList */
     struct dd_Node *current = active_connections;
@@ -520,8 +522,10 @@ static void run_server(Setup *server_setup)
         /* delete last node */
         d_delete_node(&active_connections, prev);
     }
-    else
-        printf("\n<<<all of connections were closed (maybe from a SIGHUP)>>>\n");
+
+    print_log("\nStorage Status\n- capacity = %d out of %d\n- n.files = %d out of %d",
+              server_stat.actual_capacity, server_stat.capacity,
+              server_stat.actual_max_files, server_stat.max_files);
 
     printf("\n\t(***) STORAGE (***)\n");
     printf("\tcapacity = %d out of %d\n", server_stat.actual_capacity, server_stat.capacity);
@@ -529,16 +533,12 @@ static void run_server(Setup *server_setup)
     ht_print(storage_ht);
     printf("\n\t(*****************)\n");
 
-    /* in caso di sighup/sigint */
-    for (int i = 0; i < server_setup->n_workers; i++)
-    {
-        printf("\n<<<invio una signal su pending_request>>>\n");
-        safe_csignal(&pending_requests_cond);
-        sleep(1);
-    }
+    print_log("broadcasting to workers");
+    safe_cbroadcast(&pending_requests_cond);
 
     for (int i = 0; i < server_setup->n_workers; i++)
     {
+        print_log("\n<<<Joining %d worker thread>>>\n", i);
         printf("\n<<<Joining %d worker thread>>>\n", i);
         safe_pjoin(workers_tid[i], NULL);
     }
@@ -569,12 +569,11 @@ void check_argc(int argc)
 static void *worker_func(void *args)
 {
     /* in this function the server will parse the client request */
-
     /* worker will read the request from fd_client */
 
     ServerRequest incoming_request;
-    // memset(&incoming_request, 0, sizeof(ServerRequest));
 
+    print_log("thread %ld attivo", pthread_self());
     printf("--- thread %ld attivo ---\n", pthread_self());
 
     while (TRUE)
@@ -588,15 +587,12 @@ static void *worker_func(void *args)
         {
             printf("\n<<<closing worker>>>\n");
             safe_punlock(&pending_requests_mutex);
-            break;
+            pthread_exit(NULL);
         }
 
         dequeue(pending_requests, &incoming_request);
 
         safe_punlock(&pending_requests_mutex);
-
-        printf(" --- WORKER REQUEST ---\n");
-        print_parsed_request(incoming_request);
 
         switch (incoming_request.cmd_type)
         {
@@ -605,18 +601,23 @@ static void *worker_func(void *args)
             Response response;
             memset(&response, 0, sizeof(Response));
 
-            if (incoming_request.flags == (O_CREATE | O_LOCK))
-            {
+            print_log("Trying to open with flag %d: %s", incoming_request.flags, incoming_request.pathname);
 
+            if (incoming_request.flags == O_CREATE)
+            {
+                printf("OCREATE\n");
                 safe_plock(&storage_mutex);
 
-                if (ht_exists(storage_ht, incoming_request.pathname)) /* file already exists in storage */
+                /* O_CREATE - file already exists in storage */
+                if (ht_exists(storage_ht, incoming_request.pathname))
                 {
                     safe_punlock(&storage_mutex);
 
+                    /* returns error code */
+                    print_log("%s already exists", incoming_request.pathname);
                     response.code = FILE_ALREADY_EXISTS;
                 }
-                else /* file does not exists */
+                else /* O_CREATE - file does not exists */
                 {
                     if (incoming_request.size <= server_stat.capacity)
                     { /* case when storage can contain the file sent in request */
@@ -631,21 +632,24 @@ static void *worker_func(void *args)
                         strncpy(new->pathname, incoming_request.pathname, MAX_PATHNAME);
                         strncpy(key, new->pathname, MAX_PATHNAME);
 
+                        /* lock init */
                         safe_pmutex_init(&(new->lock), NULL);
+                        /* file is new and open */
                         new->is_open = TRUE;
-                        new->is_locked = TRUE;
                         new->is_new = TRUE;
-                        new->is_victim = FALSE;
+                        /* set dimension, last client (this) and last operation (this) */
                         new->size = incoming_request.size;
                         new->last_client = incoming_request.calling_client;
+                        new->last_op = O_CREATE_SUCCESS;
 
                         ht_insert(&storage_ht, new, key);
+
+                        print_log("%s created and opened with success", incoming_request.pathname);
 
                         response.code = O_CREATE_SUCCESS;
 
                         safe_plock(&server_stat_mtx);
 
-                        // server_stat.actual_capacity += incoming_request.size;
                         server_stat.actual_max_files++;
 
                         safe_punlock(&server_stat_mtx);
@@ -656,8 +660,33 @@ static void *worker_func(void *args)
                     {
                         safe_punlock(&storage_mutex);
                         response.code = STRG_OVERFLOW;
-                        printf("\n<<<STORAGE IS EMPTY => FILE IS TOO BIG>>>");
                     }
+                }
+            }
+            else
+            {
+                /* O_CREATE is not specified */
+                safe_plock(&storage_mutex);
+
+                /* file exists in storage, we need to open it */
+                if (ht_exists(storage_ht, incoming_request.pathname))
+                {
+                    FRecord *rec = (FRecord *)ht_get(storage_ht, incoming_request.pathname);
+                    safe_punlock(&storage_mutex);
+
+                    safe_plock(&rec->lock);
+                    rec->is_open = TRUE;
+                    safe_punlock(&rec->lock);
+
+                    print_log("%s opened with success", incoming_request.pathname);
+                
+                    response.code = OPEN_SUCCESS;
+                }
+                else
+                {
+                    safe_punlock(&storage_mutex);
+
+                    response.code = FAILED_FILE_SEARCH;
                 }
             }
 
@@ -668,6 +697,8 @@ static void *worker_func(void *args)
 
         case APPEND_FILE_REQ:
         {
+            print_log("attempting to appendFile to %s", incoming_request.pathname);
+
             /* the append operation is atomic, so we need to take the lock of the server */
             safe_plock(&storage_mutex);
 
@@ -679,104 +710,15 @@ static void *worker_func(void *args)
             {
                 /* if it exists then get it */
                 FRecord *rec = (FRecord *)ht_get(storage_ht, incoming_request.pathname);
-
-                if (rec->is_locked == FALSE)
-                {
-                    if (incoming_request.size > server_stat.capacity)
-                    {
-                        response.code = STRG_OVERFLOW;
-                    }
-                    else
-                    {
-                        /* in order to deselect rec from the LRU search ==> rec->is_new = TRUE */
-                        rec->is_new = TRUE;
-
-                        /* lru check */
-                        int n_to_eject;
-                        FRecord *files_to_send = select_lru_victims(incoming_request.size, incoming_request.pathname, &n_to_eject);
-
-                        response.code = n_to_eject;
-                        printf("£££ sending response.code = %d\n", response.code);
-                        writen(incoming_request.fd_cleint, &response, sizeof(response));
-
-                        /* now the server knows which files to send */
-                        /* so at the end of a single cycle a writen will be made in order to
-                         * send the ejected file
-                        */
-
-                        for (int i = 0; i < n_to_eject; i++)
-                        {
-                            Response file_response;
-                            memset(&file_response, 0, sizeof(file_response));
-
-                            file_response.content_size = files_to_send[i].size;
-
-                            printf("sizeof(rec->content) = %ld\n", files_to_send[i].size);
-
-                            strncpy(file_response.path, files_to_send[i].pathname, strlen(files_to_send[i].pathname) + 1);
-                            memcpy(file_response.content, files_to_send[i].content, files_to_send[i].size);
-
-                            printf("sending file...\n");
-                            writen(incoming_request.fd_cleint, &file_response, sizeof(file_response));
-                        }
-
-                        /* Having space to append... */
-                        time_t now = time(NULL);
-                        size_t old_size = rec->size;
-
-                        rec->is_locked = FALSE;
-                        rec->is_new = FALSE;
-                        rec->last_edit = now;
-                        rec->size += incoming_request.size;
-
-                        if (rec->content == NULL)
-                        {
-                            rec->content = safe_malloc(1 + (sizeof(char) * incoming_request.size));
-                            memcpy(rec->content, incoming_request.content, incoming_request.size);
-                        }
-                        else
-                        {
-                            printf("<<<appending>>>\n");
-                            char *new_content = conc(old_size, rec->content, incoming_request.content);
-                            free(rec->content);
-                            rec->content = safe_malloc(1 + (sizeof(char) * (incoming_request.size + old_size)));
-                            memcpy(rec->content, new_content, old_size + incoming_request.size);
-                            free(new_content);
-                        }
-
-                        server_stat.actual_capacity += incoming_request.size;
-
-                        response.code = APPEND_FILE_SUCCESS;
-                    }
-                }
-            }
-
-            writen(incoming_request.fd_cleint, &response, sizeof(response));
-            safe_punlock(&storage_mutex);
-        }
-        break;
-
-        case WRITE_FILE_REQ:
-        {
-            Response response;
-            memset(&response, 0, sizeof(Response));
-
-            safe_plock(&storage_mutex);
-
-            time_t now = time(0);
-
-            if (ht_exists(storage_ht, incoming_request.pathname))
-            {
-                FRecord *rec = (FRecord *)ht_get(storage_ht, incoming_request.pathname);
-
                 safe_punlock(&storage_mutex);
 
-                printf("file opened with O_CREATE exists and its path is: %s\n", rec->pathname);
-
-                if (rec->is_open == TRUE && rec->is_locked == TRUE)
+                if (incoming_request.size > server_stat.capacity)
+                    response.code = STRG_OVERFLOW;
+                else
                 {
-                    printf("attempting to write on file opened with O_CREATE\n");
-                    /* use response.code as n_to_eject */
+                    safe_plock(&rec->lock);
+                    /* in order to deselect rec from the LRU search ==> rec->is_new = TRUE */
+                    rec->is_new = TRUE;
 
                     /* lru check */
                     int n_to_eject;
@@ -784,13 +726,12 @@ static void *worker_func(void *args)
 
                     response.code = n_to_eject;
 
-                    printf("£££ sending response.code = %d\n", response.code);
                     writen(incoming_request.fd_cleint, &response, sizeof(response));
 
                     /* now the server knows which files to send */
                     /* so at the end of a single cycle a writen will be made in order to
-                     * send the ejected file
-                    */
+                         * send the ejected file
+                        */
 
                     for (int i = 0; i < n_to_eject; i++)
                     {
@@ -806,6 +747,106 @@ static void *worker_func(void *args)
 
                         printf("sending file...\n");
                         writen(incoming_request.fd_cleint, &file_response, sizeof(file_response));
+                    }
+
+                    /* Having space to append... */
+                    time_t now = time(NULL);
+                    size_t old_size = rec->size;
+
+                    rec->is_new = FALSE;
+                    rec->last_op = APPEND_FILE_SUCCESS;
+                    rec->last_edit = now;
+                    rec->size += incoming_request.size;
+
+                    if (rec->content == NULL)
+                    {
+                        rec->content = safe_malloc(1 + (sizeof(char) * incoming_request.size));
+                        memcpy(rec->content, incoming_request.content, incoming_request.size);
+                    }
+                    else
+                    {
+                        print_log("appending other %d space to %s", incoming_request.size, rec->pathname);
+
+                        char *new_content = conc(old_size, rec->content, incoming_request.content);
+
+                        free(rec->content);
+
+                        rec->content = safe_malloc(1 + (sizeof(char) * (incoming_request.size + old_size)));
+                        memcpy(rec->content, new_content, old_size + incoming_request.size);
+
+                        free(new_content);
+                    }
+
+                    safe_punlock(&rec->lock);
+
+                    safe_plock(&server_stat_mtx);
+                    server_stat.actual_capacity += incoming_request.size;
+                    safe_punlock(&server_stat_mtx);
+
+                    response.code = APPEND_FILE_SUCCESS;
+                }
+            }
+
+            writen(incoming_request.fd_cleint, &response, sizeof(response));
+            safe_punlock(&storage_mutex);
+        }
+        break;
+
+        case WRITE_FILE_REQ:
+        {
+            print_log("attempting to writeFile to %s", incoming_request.pathname);
+            Response response;
+            memset(&response, 0, sizeof(Response));
+
+            safe_plock(&storage_mutex);
+
+            time_t now = time(0);
+
+            if (ht_exists(storage_ht, incoming_request.pathname))
+            {
+                FRecord *rec = (FRecord *)ht_get(storage_ht, incoming_request.pathname);
+
+                safe_punlock(&storage_mutex);
+
+                print_log("file opened with O_CREATE exists and its path is: %s\n", rec->pathname);
+
+                /* locking the file to perform this operation */
+                safe_plock(&rec->lock);
+
+                /* if the file exists and its last operation was openFile with O_CREATE flag then we can write on it */
+                if (rec->is_open == TRUE && rec->last_op == O_CREATE_SUCCESS && rec->last_client == incoming_request.calling_client)
+                {
+                    print_log("Writing on %s opened with O_CREATE\n", rec->pathname);
+                    /* use response.code as n_to_eject */
+
+                    /* lru check */
+                    int n_to_eject;
+
+                    /* it deletes lru victims and store them into an array called files_to_send */
+                    FRecord *files_to_send = select_lru_victims(incoming_request.size, incoming_request.pathname, &n_to_eject);
+
+                    response.code = n_to_eject;
+
+                    writen(incoming_request.fd_cleint, &response, sizeof(response));
+
+                    /* now the server knows which files to send
+                     * so at the end of a single cycle a writen will be made in order to
+                     * send the ejected file
+                     *
+                     * cycling files_to_send array 
+                    */
+                    for (int i = 0; i < n_to_eject; i++)
+                    {
+                        Response file_response;
+                        memset(&file_response, 0, sizeof(file_response));
+
+                        file_response.content_size = files_to_send[i].size;
+
+                        strncpy(file_response.path, files_to_send[i].pathname, strlen(files_to_send[i].pathname) + 1);
+                        memcpy(file_response.content, files_to_send[i].content, files_to_send[i].size);
+
+                        printf("sending file...\n");
+                        writen(incoming_request.fd_cleint, &file_response, sizeof(file_response));
 
                         if (files_to_send[i].content != NULL)
                             free(files_to_send[i].content);
@@ -814,11 +855,12 @@ static void *worker_func(void *args)
                     if (files_to_send != NULL)
                         free(files_to_send);
 
-                    safe_plock(&(rec->lock));
-
-                    rec->is_locked = FALSE;
-
+                    /* write to the file */
+                    /* updating metadata */
                     rec->last_edit = now;
+                    rec->last_op = WRITE_SUCCESS;
+
+                    /* init space for content */
                     if (rec->content == NULL)
                         rec->content = safe_malloc(1 + (sizeof(char) * incoming_request.size));
 
@@ -827,13 +869,15 @@ static void *worker_func(void *args)
 
                     safe_punlock(&(rec->lock));
 
+                    print_log("%s was succesfully written", rec->pathname);
+
                     response.code = WRITE_SUCCESS;
                 }
                 else
                 {
-                    safe_punlock(&storage_mutex);
+                    safe_punlock(&(rec->lock));
                     /* before you do a write operation, you need to open the file */
-                    printf("\n<<<The client must open the file using O_CREATE | O_LOCK flags>>>\n");
+                    printf("\n<<<The client must open the file using O_CREATE flags>>>\n");
                     response.code = WRITE_FAILED;
                 }
             }
@@ -855,46 +899,38 @@ static void *worker_func(void *args)
 
         case READ_FILE_REQ:
         {
+            print_log("attempting to read %s", incoming_request.pathname);
+
             Response response;
             memset(&response, 0, sizeof(Response));
 
             safe_plock(&storage_mutex);
 
-            time_t now = time(0);
-
             if (ht_exists(storage_ht, incoming_request.pathname))
             {
                 FRecord *rec = (FRecord *)ht_get(storage_ht, incoming_request.pathname);
+                safe_punlock(&storage_mutex);
 
-                if (rec->is_locked == FALSE)
+                safe_plock(&rec->lock);
+
+                /* sending the size of the content, in order to read exactly that size */
+                if (rec->content != NULL && rec->is_open == TRUE)
                 {
-                    /* sending the size of the content, in order to read exactly that size */
-                    if (rec->content != NULL)
-                    {
-                        safe_punlock(&storage_mutex);
+                    response.content_size = rec->size;
 
-                        safe_plock(&(rec->lock));
+                    /* put path and content in the response struct */
+                    strncpy(response.path, incoming_request.pathname, strlen(incoming_request.pathname) + 1);
+                    memcpy(response.content, rec->content, rec->size);
 
-                        response.code = READ_SUCCESS;
-                        rec->last_edit = now;
-                        response.content_size = rec->size;
-
-                        strncpy(response.path, incoming_request.pathname, strlen(incoming_request.pathname) + 1);
-                        memcpy(response.content, rec->content, rec->size);
-
-                        safe_punlock(&(rec->lock));
-                    }
-                    else
-                    {
-                        safe_punlock(&storage_mutex);
-                        printf("Rec->content is null\n");
-                        response.code = FAILED_FILE_SEARCH;
-                    }
+                    response.code = READ_SUCCESS;
                 }
                 else
                 {
-                    safe_punlock(&storage_mutex);
+                    /* two kinds of problem: content is null or file is not opened */
+                    response.code = FILE_NOT_OPENED;
                 }
+
+                safe_punlock(&rec->lock);
             }
             else
             {
@@ -915,13 +951,24 @@ static void *worker_func(void *args)
             int n = incoming_request.flags;
 
             safe_plock(&storage_mutex);
+
+            /* if the clients wants to read more than max_files files,
+             * or the flag is not specified, then the server will
+             * send all files in storage.
+            */
+
+            safe_plock(&server_stat_mtx);
+
             if (n < 0 || n > server_stat.actual_max_files)
             {
                 response.code = server_stat.actual_max_files;
             }
-            else
+            else /* otherwise server will send exactly n files */
                 response.code = n;
 
+            safe_punlock(&server_stat_mtx);
+
+            /* telling to the client that it will have to receive n files */
             writen(incoming_request.fd_cleint, &response, sizeof(response));
 
             int n_to_read = response.code;
@@ -945,20 +992,17 @@ static void *worker_func(void *args)
 
                         if (rec != NULL)
                         {
-                            if (rec->is_locked == FALSE)
-                            {
-                                response.content_size = rec->size;
+                            response.content_size = rec->size;
 
-                                printf("sizeof(rec->content) = %ld\n", rec->size);
+                            strncpy(response.path, rec->pathname, strlen(rec->pathname) + 1);
+                            memcpy(response.content, rec->content, rec->size);
 
-                                strncpy(response.path, rec->pathname, strlen(rec->pathname) + 1);
-                                memcpy(response.content, rec->content, rec->size);
+                            response.code = READ_SUCCESS;
+                            writen(incoming_request.fd_cleint, &response, sizeof(response));
 
-                                printf("sending file...\n");
-                                response.code = READ_SUCCESS;
-                                writen(incoming_request.fd_cleint, &response, sizeof(response));
-                                k++;
-                            }
+                            print_log("sent file with:\n- path = %s\n- size = %ld", rec->pathname, rec->size);
+
+                            k++;
                         }
                     }
                     else
@@ -969,73 +1013,15 @@ static void *worker_func(void *args)
                     break;
             }
 
-            printf("\n<<<%d files succesfully sent!>>>\n", k);
+            print_log("%d files successfully sent to %d", k, incoming_request.fd_cleint);
             safe_punlock(&storage_mutex);
         }
 
-        break;
-
-        case REMOVE_FILE_REQ:
-        {
-            Response response;
-            memset(&response, 0, sizeof(response));
-
-            safe_plock(&storage_mutex);
-
-            if (ht_exists(storage_ht, incoming_request.pathname))
-            {
-                FRecord *rec = (FRecord *)ht_get(storage_ht, incoming_request.pathname);
-
-                if (rec->is_locked == TRUE)
-                {
-                    /* two cases: calling client is the client who locked */
-                    if (rec->last_client == incoming_request.calling_client)
-                    {
-                        printf("\n>>>(DEBUG) The client who's trying to remove the locked file is the client who locked the file<<<\n");
-                        printf("\n<<<REMOVING %s>>>\n", incoming_request.pathname);
-
-                        /* update server status */
-                        safe_plock(&server_stat_mtx);
-
-                        server_stat.actual_max_files--;
-                        server_stat.actual_capacity -= rec->size;
-
-                        safe_punlock(&server_stat_mtx);
-
-                        ht_delete(&storage_ht, incoming_request.pathname);
-
-                        response.code = REMOVE_FILE_SUCCESS;
-                    }
-                    else
-                        response.code = FILE_IS_LOCKED;
-                }
-                else
-                {
-                    /* if it is not locked the client can remove the item */
-                    printf("\n<<<REMOVING %s>>>\n", incoming_request.pathname);
-
-                    /* update server status */
-                    safe_plock(&server_stat_mtx);
-
-                    server_stat.actual_max_files--;
-                    server_stat.actual_capacity -= rec->size;
-
-                    safe_punlock(&server_stat_mtx);
-
-                    ht_delete(&storage_ht, incoming_request.pathname);
-                    response.code = REMOVE_FILE_SUCCESS;
-                }
-            }
-            else
-                response.code = FAILED_FILE_SEARCH;
-
-            safe_punlock(&storage_mutex);
-            writen(incoming_request.fd_cleint, &response, sizeof(response));
-        }
         break;
 
         case CLOSE_FILE_REQ:
         {
+            print_log("attempting to close %s file", incoming_request.pathname);
             Response response;
             memset(&response, 0, sizeof(response));
 
@@ -1049,31 +1035,21 @@ static void *worker_func(void *args)
                 safe_plock(&(rec->lock));
                 if (rec->is_open == TRUE)
                 {
-                    /* split in two cases */
-                    /* first case: this file is locked */
-                    if (rec->is_locked == TRUE)
-                    {
-                        /* we have to check that the last client (the client that made the lock) */
-                        /* if the client that makes the closing request is the last client => is legal */
-                        if (rec->last_client == incoming_request.calling_client)
-                        {
-                            /* legal ==> closing the file */
-                            rec->is_locked = FALSE;
-                            rec->is_open = FALSE;
-                            rec->is_new = FALSE;
-                            response.code = CLOSE_FILE_SUCCESS;
-                        }
-                        else
-                        {
-                            /* if is not the client who made the lock ==> illegal, response code is FILE_IS_LOCKED */
-                            response.code = FILE_IS_LOCKED;
-                        }
-                    }
 
-                    /* second case: this file is not locked so we can close it */
-                    rec->is_open = FALSE;
-                    rec->is_new = FALSE;
-                    response.code = CLOSE_FILE_SUCCESS;
+                    /* if the client that made the closing request is the last client */
+                    if (rec->last_client == incoming_request.calling_client)
+                    {
+                        rec->is_open = FALSE;
+                        rec->is_new = FALSE;
+                        response.code = CLOSE_FILE_SUCCESS;
+                        print_log("%s closed with success", incoming_request.pathname);
+                    }
+                    else
+                    {
+                        /* if is not the client who made the lock ==> illegal, response code is FILE_IS_LOCKED */
+                        response.code = NOT_AUTH;
+                        print_log("a client other than the one who opened the file, tried to close the file");
+                    }
                 }
                 else
                 {
@@ -1102,12 +1078,12 @@ static void *worker_func(void *args)
         safe_plock(&mwpipe_mutex);
 
         while (can_pipe == 0)
-            pthread_cond_wait(&workers_done, &mwpipe_mutex);
+            safe_cwait(&workers_done, &mwpipe_mutex);
 
         can_pipe = 0;
 
         int res;
-        printf("\n<<<riascolto al fd %d>>>\n", incoming_request.fd_cleint);
+
         if ((res = writen(mwpipe[1], &(incoming_request.fd_cleint), sizeof(int))) == -1)
         {
             perror("Writing on pipe error");
@@ -1116,7 +1092,7 @@ static void *worker_func(void *args)
 
         safe_punlock(&mwpipe_mutex);
 
-        printf("wrote on pipe\n");
+        // print_log("wrote on pipe\n");
     }
 
     pthread_exit((void *)NULL);
@@ -1154,15 +1130,15 @@ FRecord *select_lru_victims(size_t incoming_req_size, char *incoming_path, int *
 
     /* making a cycle to determine how many files need to be ejected
                        to make space for the new file */
-    printf("### Calling LRU Check ###\n");
-    printf("### server_stat.actual_capacity = %d ###\n", server_stat.actual_capacity);
-    printf("### server_stat.actual_max_files = %d ###\n", server_stat.actual_max_files);
+    print_log("\nLRU check\n- capacity stat = %d\n- n.files stat = %d\n",
+              server_stat.actual_capacity, server_stat.actual_max_files);
+
     while (((server_stat.actual_capacity > server_stat.capacity) && n_to_eject >= 0) || ((server_stat.actual_max_files > server_stat.max_files) && n_to_eject >= 0))
     {
 
         char *oldest_path = lru(storage_ht, incoming_path);
 
-        printf("\n>>>victim selected: %s<<<\n", oldest_path);
+        print_log("victim selected and deleted is %s", oldest_path);
 
         FRecord *cur_victim = (FRecord *)ht_get(storage_ht, oldest_path);
 
@@ -1181,6 +1157,8 @@ FRecord *select_lru_victims(size_t incoming_req_size, char *incoming_path, int *
 
     safe_punlock(&storage_mutex);
     safe_punlock(&server_stat_mtx);
+
+    print_log("LRU has removed %d files from storage", n_to_eject);
 
     *n_removed_files = n_to_eject;
 
@@ -1224,9 +1202,56 @@ char *lru(HashTable ht, char *incoming_path)
     return oldest_path;
 }
 
-int log_init(char *log_pathname)
+int log_init(char *config_logpath)
 {
-    printf("strlen of log pathname = %ld\n", strlen(log_pathname));
+    printf("config log path: %s\n", config_logpath);
+    char logs_folder_pathname[MAX_PATHNAME];
+    char logs_filename[MAX_LOGFILENAME];
+
+    int error;
+
+    /* naming the log file as the date time of the log */
+    time_t rawtime;
+    struct tm *info;
+
+    time(&rawtime);
+    info = localtime(&rawtime);
+
+    strftime(logs_filename, MAX_LOGFILENAME, "%d-%b-%Y.txt", info);
+
+    printf("log filename: %s\n", logs_filename);
+
+    /* searching for logs folder */
+    DIR *logs_folder = opendir(config_logpath);
+
+    if (logs_folder == NULL)
+    {
+        printf("creating ServerLogs folder\n");
+        /* create the directory if it does not exist */
+        error = mkdir(config_logpath, 0777);
+
+        if (error != 0)
+        {
+            perror("cannot create logs folder");
+            exit(EXIT_FAILURE);
+        }
+        else
+        {
+            sprintf(logs_folder_pathname, "%s/%s", config_logpath, logs_filename);
+        }
+    }
+    else
+    {
+        SYSCALL_EXIT("closedir", error, closedir(logs_folder), "cannot close logs directory", "");
+        sprintf(logs_folder_pathname, "%s/%s", config_logpath, logs_filename);
+    }
+
+    printf("log file is available on %s\n", logs_folder_pathname);
+
+    log_stream = fopen(logs_folder_pathname, "w");
+
+    if (!log_stream)
+        printf("cannot create log (errno = %d)\n", errno);
 
     return 0;
 }
@@ -1242,17 +1267,35 @@ void clean_all(pthread_t **workers_tid, int *fd_socket, int *fd_client)
     close((*fd_client));
 }
 
-void print_parsed_request(ServerRequest parsed_request)
+void print_log(const char *format, ...)
 {
-    printf("\n");
-    printf("=> CALLING CLIENT     : %d\n", parsed_request.calling_client);
-    printf("=> COMMAND TYPE       : %s\n", cmd_type_to_string(parsed_request.cmd_type));
-    printf("=> PATHNAME           : %s\n", parsed_request.pathname);
-    printf("=> FLAGS              : %d\n", parsed_request.flags);
-    printf("=> FILE SIZE (IN DISK): %ld\n", parsed_request.size);
-    if (parsed_request.content != NULL)
-        printf("=> CONTENT            : %s\n", parsed_request.content);
-    printf("\n");
+    char buffer[256];
+    char time_string[MAX_TIMESTRING];
+    va_list args;
+    time_t rawtime;
+    struct tm *info;
+
+    time(&rawtime);
+    info = localtime(&rawtime);
+
+    va_start(args, format);
+    vsnprintf(buffer, 256, format, args);
+    va_end(args);
+
+    safe_plock(&log_mutex);
+
+    if (log_stream)
+    {
+        /* timestamp to string */
+        strftime(time_string, MAX_TIMESTRING, "%I:%M:%S", info);
+
+        /* write to log */
+        fprintf(log_stream, "%s fss ==> %s\n\n", time_string, buffer);
+
+        fflush(log_stream);
+    }
+
+    safe_punlock(&log_mutex);
 }
 
 char *cmd_type_to_string(int cmd_code)

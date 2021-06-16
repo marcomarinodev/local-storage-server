@@ -100,20 +100,20 @@ void safe_pjoin(pthread_t t, void *status)
     }
 }
 
-void safe_pattr_destroy(pthread_attr_t attr)
+void safe_pattr_destroy(pthread_attr_t *attr)
 {
     int err = 1;
-    if ((err = pthread_attr_destroy(&attr)) != 0)
+    if ((err = pthread_attr_destroy(attr)) != 0)
     {
         perror("safe_pattr_destroy:");
         exit(EXIT_FAILURE);
     }
 }
 
-void safe_pattr_init(pthread_attr_t attr)
+void safe_pattr_init(pthread_attr_t *attr)
 {
     int err = 1;
-    if ((err = pthread_attr_init(&attr)) != 0)
+    if ((err = pthread_attr_init(attr)) != 0)
     {
         perror("safe_pattr_init:");
         exit(EXIT_FAILURE);
@@ -123,7 +123,7 @@ void safe_pattr_init(pthread_attr_t attr)
 void safe_pmutex_init(pthread_mutex_t *mutex, const pthread_mutexattr_t *restrict attr)
 {
     int err = 1;
-    
+
     if ((err = pthread_mutex_init(mutex, attr)) != 0)
     {
         perror("safe_pmutex_init:");

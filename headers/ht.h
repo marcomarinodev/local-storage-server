@@ -19,9 +19,8 @@ typedef struct _frecord
     size_t size;
     time_t last_edit;
     pthread_mutex_t lock;
-    int is_locked;
     int is_new;
-    int is_victim;
+    int last_op;
     int is_open;
     pid_t last_client;
     /* data */

@@ -190,7 +190,7 @@ int _getopt(LList *configs, LList *reqs, int argcount, char **_argv)
     free(opt_value);
     free(current_request);
 
-    sleep(1);
+    usleep(c_setup.req_time_interval * 1000);
 
     return validate(*configs, *reqs);
 }
@@ -271,7 +271,7 @@ int perform(Client_setup setup, LList *request_commands)
                 printf("-W command execution:\n");
                 /* if it passed the check, then we call the API in order to write into the storage */
 
-                int open_res = openFile(abs_path, O_CREATE | O_LOCK);
+                int open_res = openFile(abs_path, O_CREATE);
 
                 if (open_res == 0)
                 {
@@ -739,7 +739,7 @@ int lsR(const char *dirname, int *n)
         {
             char abs_path[MAXFILENAME];
 
-            int open_res = openFile(realpath(dirname, abs_path), (O_CREATE | O_LOCK));
+            int open_res = openFile(realpath(dirname, abs_path), O_CREATE);
 
             /* API Call */
             if (open_res == 0)

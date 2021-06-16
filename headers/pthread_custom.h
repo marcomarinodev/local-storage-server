@@ -49,12 +49,12 @@ void safe_pjoin(pthread_t t, void *status);
 /**
  * pthread_attr_destroy with error checking
 */
-void safe_pattr_destroy(pthread_attr_t attr);
+void safe_pattr_destroy(pthread_attr_t *attr);
 
 /**
  * pthread_attr_init with error checking
 */
-void safe_pattr_init(pthread_attr_t attr);
+void safe_pattr_init(pthread_attr_t *attr);
 
 /**
  * pthread_mutex_init with error checking

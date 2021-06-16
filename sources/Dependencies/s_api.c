@@ -126,13 +126,6 @@ int openFile(const char *pathname, int flags)
             return 0;
         }
 
-        if (response.code == FILE_IS_LOCKED)
-        {
-            printf("\n<<<YOU CANNOT OPEN THE FILE BECAUSE IT IS LOCKED>>>\n");
-            errno = FILE_IS_LOCKED;
-            return -1;
-        }
-
         if (response.code == FILE_ALREADY_EXISTS)
         {
             printf("\n>>>FILE ALREADY EXISTS<<<\n");

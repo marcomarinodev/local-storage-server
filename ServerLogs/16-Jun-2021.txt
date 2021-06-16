@@ -1,0 +1,359 @@
+11:32:29 fss ==> UNIX file-storage-server logger
+
+11:32:29 fss ==> parsed config file
+
+11:32:29 fss ==> 1 has been created
+
+11:32:29 fss ==> Server is listening to incoming requests. The fd_socket is 8
+
+11:32:29 fss ==> thread 99030784 attivo
+
+11:32:35 fss ==> client 9 is connected
+
+11:32:35 fss ==> 
+Incoming request:
+- calling client desc: 9
+- cmd: OPEN
+- path: /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/images/orange.jpg
+
+11:32:35 fss ==> Trying to open with flag 1: /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/images/orange.jpg
+
+11:32:35 fss ==> /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/images/orange.jpg created and opened with success
+
+11:32:35 fss ==> Re-listen to 6 descriptor
+
+11:32:35 fss ==> Pipe is available for other workers
+
+11:32:35 fss ==> 
+Incoming request:
+- calling client desc: 9
+- cmd: WRITE
+- path: /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/images/orange.jpg
+
+11:32:35 fss ==> attempting to writeFile to /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/images/orange.jpg
+
+11:32:35 fss ==> file opened with O_CREATE exists and its path is: /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/images/orange.jpg
+
+
+11:32:35 fss ==> Writing on /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/images/orange.jpg opened with O_CREATE
+
+
+11:32:35 fss ==> 
+LRU check
+- capacity stat = 18122
+- n.files stat = 1
+
+
+11:32:35 fss ==> LRU has removed 0 files from storage
+
+11:32:35 fss ==> /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/images/orange.jpg was succesfully written
+
+11:32:35 fss ==> Re-listen to 6 descriptor
+
+11:32:35 fss ==> Pipe is available for other workers
+
+11:32:35 fss ==> 
+Incoming request:
+- calling client desc: 9
+- cmd: CLOSE
+- path: /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/images/orange.jpg
+
+11:32:35 fss ==> attempting to close /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/images/orange.jpg file
+
+11:32:35 fss ==> /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/images/orange.jpg closed with success
+
+11:32:35 fss ==> Re-listen to 6 descriptor
+
+11:32:35 fss ==> Pipe is available for other workers
+
+11:32:35 fss ==> 
+Incoming request:
+- calling client desc: 9
+- cmd: OPEN
+- path: /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_01.txt
+
+11:32:35 fss ==> Trying to open with flag 1: /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_01.txt
+
+11:32:35 fss ==> /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_01.txt created and opened with success
+
+11:32:35 fss ==> Re-listen to 6 descriptor
+
+11:32:35 fss ==> Pipe is available for other workers
+
+11:32:35 fss ==> 
+Incoming request:
+- calling client desc: 9
+- cmd: WRITE
+- path: /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_01.txt
+
+11:32:35 fss ==> attempting to writeFile to /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_01.txt
+
+11:32:35 fss ==> file opened with O_CREATE exists and its path is: /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_01.txt
+
+
+11:32:35 fss ==> Writing on /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_01.txt opened with O_CREATE
+
+
+11:32:35 fss ==> 
+LRU check
+- capacity stat = 18223
+- n.files stat = 2
+
+
+11:32:35 fss ==> LRU has removed 0 files from storage
+
+11:32:35 fss ==> /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_01.txt was succesfully written
+
+11:32:35 fss ==> Re-listen to 6 descriptor
+
+11:32:35 fss ==> Pipe is available for other workers
+
+11:32:35 fss ==> 
+Incoming request:
+- calling client desc: 9
+- cmd: CLOSE
+- path: /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_01.txt
+
+11:32:35 fss ==> attempting to close /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_01.txt file
+
+11:32:35 fss ==> /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_01.txt closed with success
+
+11:32:35 fss ==> Re-listen to 6 descriptor
+
+11:32:35 fss ==> Pipe is available for other workers
+
+11:32:35 fss ==> 
+Incoming request:
+- calling client desc: 9
+- cmd: OPEN
+- path: /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_02.txt
+
+11:32:35 fss ==> Trying to open with flag 1: /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_02.txt
+
+11:32:35 fss ==> /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_02.txt created and opened with success
+
+11:32:35 fss ==> Re-listen to 6 descriptor
+
+11:32:35 fss ==> Pipe is available for other workers
+
+11:32:35 fss ==> 
+Incoming request:
+- calling client desc: 9
+- cmd: WRITE
+- path: /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_02.txt
+
+11:32:35 fss ==> attempting to writeFile to /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_02.txt
+
+11:32:35 fss ==> file opened with O_CREATE exists and its path is: /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_02.txt
+
+
+11:32:35 fss ==> Writing on /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_02.txt opened with O_CREATE
+
+
+11:32:35 fss ==> 
+LRU check
+- capacity stat = 18322
+- n.files stat = 3
+
+
+11:32:35 fss ==> LRU has removed 0 files from storage
+
+11:32:35 fss ==> /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_02.txt was succesfully written
+
+11:32:35 fss ==> Re-listen to 6 descriptor
+
+11:32:35 fss ==> Pipe is available for other workers
+
+11:32:35 fss ==> 
+Incoming request:
+- calling client desc: 9
+- cmd: CLOSE
+- path: /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_02.txt
+
+11:32:35 fss ==> attempting to close /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_02.txt file
+
+11:32:35 fss ==> /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_02.txt closed with success
+
+11:32:35 fss ==> Re-listen to 6 descriptor
+
+11:32:35 fss ==> Pipe is available for other workers
+
+11:32:35 fss ==> 
+Incoming request:
+- calling client desc: 9
+- cmd: OPEN
+- path: /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_03.txt
+
+11:32:35 fss ==> Trying to open with flag 1: /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_03.txt
+
+11:32:35 fss ==> /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_03.txt created and opened with success
+
+11:32:35 fss ==> Re-listen to 6 descriptor
+
+11:32:35 fss ==> Pipe is available for other workers
+
+11:32:35 fss ==> 
+Incoming request:
+- calling client desc: 9
+- cmd: WRITE
+- path: /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_03.txt
+
+11:32:35 fss ==> attempting to writeFile to /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_03.txt
+
+11:32:35 fss ==> file opened with O_CREATE exists and its path is: /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_03.txt
+
+
+11:32:35 fss ==> Writing on /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_03.txt opened with O_CREATE
+
+
+11:32:35 fss ==> 
+LRU check
+- capacity stat = 18472
+- n.files stat = 4
+
+
+11:32:35 fss ==> LRU has removed 0 files from storage
+
+11:32:35 fss ==> /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_03.txt was succesfully written
+
+11:32:35 fss ==> Re-listen to 6 descriptor
+
+11:32:35 fss ==> Pipe is available for other workers
+
+11:32:35 fss ==> 
+Incoming request:
+- calling client desc: 9
+- cmd: CLOSE
+- path: /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_03.txt
+
+11:32:35 fss ==> attempting to close /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_03.txt file
+
+11:32:35 fss ==> /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_03.txt closed with success
+
+11:32:35 fss ==> Re-listen to 6 descriptor
+
+11:32:35 fss ==> Pipe is available for other workers
+
+11:32:35 fss ==> 
+Incoming request:
+- calling client desc: 9
+- cmd: OPEN
+- path: /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_04.txt
+
+11:32:35 fss ==> Trying to open with flag 1: /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_04.txt
+
+11:32:35 fss ==> /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_04.txt created and opened with success
+
+11:32:35 fss ==> Re-listen to 6 descriptor
+
+11:32:35 fss ==> Pipe is available for other workers
+
+11:32:35 fss ==> 
+Incoming request:
+- calling client desc: 9
+- cmd: WRITE
+- path: /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_04.txt
+
+11:32:35 fss ==> attempting to writeFile to /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_04.txt
+
+11:32:35 fss ==> file opened with O_CREATE exists and its path is: /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_04.txt
+
+
+11:32:35 fss ==> Writing on /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_04.txt opened with O_CREATE
+
+
+11:32:35 fss ==> 
+LRU check
+- capacity stat = 19532
+- n.files stat = 5
+
+
+11:32:35 fss ==> LRU has removed 0 files from storage
+
+11:32:35 fss ==> /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_04.txt was succesfully written
+
+11:32:35 fss ==> Re-listen to 6 descriptor
+
+11:32:35 fss ==> Pipe is available for other workers
+
+11:32:35 fss ==> 
+Incoming request:
+- calling client desc: 9
+- cmd: CLOSE
+- path: /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_04.txt
+
+11:32:35 fss ==> attempting to close /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_04.txt file
+
+11:32:35 fss ==> /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_04.txt closed with success
+
+11:32:35 fss ==> Re-listen to 6 descriptor
+
+11:32:35 fss ==> Pipe is available for other workers
+
+11:32:35 fss ==> client 9 is disconnected
+
+11:32:36 fss ==> client 9 is connected
+
+11:32:36 fss ==> 
+Incoming request:
+- calling client desc: 9
+- cmd: READ
+- path: /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_01.txt
+
+11:32:36 fss ==> attempting to read /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_01.txt
+
+11:32:36 fss ==> Re-listen to 6 descriptor
+
+11:32:36 fss ==> Pipe is available for other workers
+
+11:32:36 fss ==> client 9 is disconnected
+
+11:32:36 fss ==> client 9 is connected
+
+11:32:36 fss ==> 
+Incoming request:
+- calling client desc: 9
+- cmd: READN
+- path: /
+
+11:32:36 fss ==> sent file with:
+- path = /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_01.txt
+- size = 101
+
+11:32:36 fss ==> sent file with:
+- path = /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_02.txt
+- size = 99
+
+11:32:36 fss ==> sent file with:
+- path = /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_03.txt
+- size = 150
+
+11:32:36 fss ==> sent file with:
+- path = /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/txts/test_04.txt
+- size = 1060
+
+11:32:36 fss ==> sent file with:
+- path = /mnt/c/Users/marco/Documents/GitHub/file-storage-server-SOL/test_src/images/orange.jpg
+- size = 18122
+
+11:32:36 fss ==> 5 files successfully sent to 9
+
+11:32:36 fss ==> Re-listen to 6 descriptor
+
+11:32:36 fss ==> Pipe is available for other workers
+
+11:32:36 fss ==> client 9 is disconnected
+
+11:32:41 fss ==> (SIGINT/SIGQUIT) waking up asleep workers
+
+11:32:41 fss ==> 
+Storage Status
+- capacity = 19532 out of 128000000
+- n.files = 5 out of 10000
+
+11:32:41 fss ==> broadcasting to workers
+
+11:32:41 fss ==> 
+<<<Joining 0 worker thread>>>
+
+

@@ -5,13 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define INVALID_INDEX -1
-#define NO_DATA -2
-#define EMPTY_LIST -3
-#define NOT_FOUND -4
-
-#define TRUE 1
-#define FALSE 0
+#include "consts.h"
 
 typedef struct _node 
 {

@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <sys/un.h>
@@ -14,25 +15,18 @@
 #include <signal.h>
 #include <assert.h>
 #include <stdarg.h>
+#include <dirent.h>
 
+#include "consts.h"
+#include "doubly_ll.h"
+#include "linked_list.h"
 #include "config_parser.h"
 #include "pthread_custom.h"
 #include "queue.h"
 #include "ht.h"
 #include "s_api.h"
-#include "doubly_ll.h"
 
-#define CONFIG_ROWS 4 /* rows in config.txt */
-#define UNIX_PATH_MAX 108
-
-/* Response codes */
-
-#define CMD_EOF 41
-
-/* Boolean representation */
-#define TRUE 1
-#define FALSE 0
-
+#define CONFIG_ROWS 5 /* rows in config.txt */
 
 typedef struct _status
 {
@@ -51,7 +45,9 @@ void check_argc(int argc);
 
 void spawn_thread();
 
-int log_init(char *log_pathname);
+int log_init(char *config_logpath);
+
+void print_log(const char *format, ...);
 
 static void *sigHandler(void *arg);
 
@@ -69,8 +65,6 @@ char *conc(size_t size1, char const *str1, char const *str2);
 
 void clean_all(pthread_t **workers_tid, int *fd_socket, int *fd_client);
 
-void print_parsed_request(ServerRequest parsed_request);
-
 void print_conn(Node *to_print);
 
 char *cmd_type_to_string(int cmd_code);
@@ -78,36 +72,5 @@ char *cmd_type_to_string(int cmd_code);
 ssize_t readn(int fd, void *ptr, size_t n);
 
 ssize_t writen(int fd, void *ptr, size_t n);
-
-#if !defined(BUFSIZE)
-#define BUFSIZE 256
-#endif
-
-#if !defined(EXTRA_LEN_PRINT_ERROR)
-#define EXTRA_LEN_PRINT_ERROR 512
-#endif
-
-/**
- * \brief Procedura di utilita' per la stampa degli errori
- *
- */
-static inline void print_error(const char *str, ...)
-{
-    const char err[] = "ERROR: ";
-    va_list argp;
-    char *p = (char *)malloc(strlen(str) + strlen(err) + EXTRA_LEN_PRINT_ERROR);
-    if (!p)
-    {
-        perror("malloc");
-        fprintf(stderr, "FATAL ERROR nella funzione 'print_error'\n");
-        return;
-    }
-    strcpy(p, err);
-    strcpy(p + strlen(err), str);
-    va_start(argp, str);
-    vfprintf(stderr, p, argp);
-    va_end(argp);
-    free(p);
-}
 
 #endif
