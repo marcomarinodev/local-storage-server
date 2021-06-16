@@ -29,22 +29,43 @@ int main(int argc, char *argv[])
 
         if (errno == 0)
         {
-            int r;
-            if ((r = perform(c_setup, &request_commands)) == NOSUCHFILE_ORDIR)
-            {
-                printf("(%d) - No such file or directory!\n", getpid());
-                if (config_commands.head != NULL)
-                    LL_free(config_commands, NULL);
-                if (request_commands.head != NULL)
-                    LL_free(request_commands, NULL);
 
-                if (closeConnection(c_setup.socket_pathname) == -1)
-                {
-                    perror("Closing Connection failed (Client)\n");
-                    exit(EXIT_FAILURE);
-                }
-                return errno;
-            }
+            stub_perform();
+
+            /* append file testing */
+            openFile("test_src/txts/test_01.txt", O_CREATE);
+
+            writeFile("test_src/txts/test_01.txt", NULL);
+
+            appendToFile("test_src/txts/test_01.txt", "   >>>hey hey hey sono un test<<<", 34, NULL);
+
+            closeFile("test_src/txts/test_01.txt");
+
+            int er = appendToFile("test_src/txts/test_01.txt", "@@@", 4, NULL);
+
+            if (er == -1)
+                printf("error in second appendToFile");
+
+            openFile("test_src/txts/test_01.txt", NO_FLAGS);
+
+            closeFile("test_src/txts/test_01.txt");
+
+            // int r;
+            // if ((r = perform(c_setup, &request_commands)) == NOSUCHFILE_ORDIR)
+            // {
+            //     printf("(%d) - No such file or directory!\n", getpid());
+            //     if (config_commands.head != NULL)
+            //         LL_free(config_commands, NULL);
+            //     if (request_commands.head != NULL)
+            //         LL_free(request_commands, NULL);
+
+            //     if (closeConnection(c_setup.socket_pathname) == -1)
+            //     {
+            //         perror("Closing Connection failed (Client)\n");
+            //         exit(EXIT_FAILURE);
+            //     }
+            //     return errno;
+            // }
         }
         else
         {
@@ -68,15 +89,6 @@ int main(int argc, char *argv[])
 
     return 0;
 }
-
-/**
- * ----------------
- * ----------------
- * ----------------
- * ------MAIN------
- * ----------------
- * ----------------
- * */
 
 int fd_is_valid(int fd)
 {
@@ -195,10 +207,17 @@ int _getopt(LList *configs, LList *reqs, int argcount, char **_argv)
     return validate(*configs, *reqs);
 }
 
+void stub_perform()
+{
+}
+
 int perform(Client_setup setup, LList *request_commands)
 {
-    print_setup(setup);
-    print_requests(request_commands);
+    if (c_setup.op_log == TRUE)
+    {
+        print_setup(setup);
+        print_requests(request_commands);
+    }
 
     Node *current_request_node = request_commands->head;
 
@@ -244,7 +263,7 @@ int perform(Client_setup setup, LList *request_commands)
             if (n == 0)
                 n = EXAUSTIVE_READ;
 
-            printf("-w command execution:\n");
+            print_op("-w command execution:");
             /* it navigates recursively through directories until n files written is reached */
             int r;
             if ((r = lsR(dirname, &n)) == NOSUCHFILE_ORDIR)
@@ -253,7 +272,7 @@ int perform(Client_setup setup, LList *request_commands)
                 return NOSUCHFILE_ORDIR;
             }
 
-            printf("(Directory scanning ok)\n");
+            print_op("(Directory scanning ok)");
         }
         break;
 
@@ -268,7 +287,7 @@ int perform(Client_setup setup, LList *request_commands)
 
                 PATH_CHECK(abs_path);
 
-                printf("-W command execution:\n");
+                print_op("-W command execution:");
                 /* if it passed the check, then we call the API in order to write into the storage */
 
                 int open_res = openFile(abs_path, O_CREATE);
@@ -277,23 +296,23 @@ int perform(Client_setup setup, LList *request_commands)
                 {
                     if (writeFile(abs_path, c_setup.ejected_buffer) == 0)
                     {
-                        printf("\nSuccessful write operation \n");
-                        printf("\nclosing the file...\n");
+                        print_op("\nSuccessful write operation");
+                        print_op("\nclosing the file...");
                         if (closeFile(abs_path) == 0)
                         {
-                            printf("\nSuccesful closing operation\n");
+                            print_op("\nSuccesful closing operation");
                         }
                         else
-                            printf("\n<<<CLOSE FAILED DUE TO (%s)>>>\n", translate_error_code(errno));
+                            print_op("<<<CLOSE FAILED DUE TO (%s)>>>", translate_error_code(errno));
                     }
                     else
                     {
-                        printf("WRITE FAILED\n");
+                        print_op("WRITE FAILED");
                     }
                 }
                 else
                 {
-                    printf("\n<<<OPEN FAILED DUE TO (%s)>>>\n", translate_error_code(errno));
+                    print_op("<<<OPEN FAILED DUE TO (%s)>>>", translate_error_code(errno));
 
                     /* in order to test appendToFile */
                     if (errno == FILE_ALREADY_EXISTS)
@@ -309,7 +328,7 @@ int perform(Client_setup setup, LList *request_commands)
         {
             int i = 0;
 
-            printf("ARG[0] = %s\n", request_args[0]);
+            print_op("ARG[0] = %s", request_args[0]);
 
             while (request_args[i] != NULL)
             {
@@ -344,7 +363,7 @@ int perform(Client_setup setup, LList *request_commands)
                     token = strtok(NULL, "/");
                 }
 
-                printf("-r command execution:\n");
+                print_op("-r command execution:");
 
                 int read_op = readFile(abs_path, &file_buffer, &data_buffer_dim);
 
@@ -364,16 +383,15 @@ int perform(Client_setup setup, LList *request_commands)
                         strcat(dir_abs_path, "/");
                         strcat(dir_abs_path, filename);
 
-                        printf("\n<<<DIRNAME TO INSERT THE READ FILE = %s>>>\n", dir_abs_path);
+                        print_op("<<<DIRNAME TO INSERT THE READ FILE = %s>>>", dir_abs_path);
 
-                        int fd = open(dir_abs_path, (O_RDWR | O_CREAT));
-
-                        write(fd, file_buffer, data_buffer_dim * sizeof(char));
-
-                        close(fd);
+                        int fd, error;
+                        SYSCALL_EXIT("open", fd, open(dir_abs_path, (O_RDWR | O_CREAT)), "open error", "");
+                        SYSCALL_EXIT("write", error, write(fd, file_buffer, data_buffer_dim * sizeof(char)), "write error", "");
+                        SYSCALL_EXIT("close", error, close(fd), "close error", "");
                     }
                     else
-                        printf(" ==> %s\n", (char *)(file_buffer));
+                        print_op(" ==> %s", (char *)(file_buffer));
 
                     free(file_buffer);
                 }
@@ -381,7 +399,7 @@ int perform(Client_setup setup, LList *request_commands)
                 {
                     if (errno == FAILED_FILE_SEARCH)
                     {
-                        printf("The file does not exists in storage\n");
+                        print_op("The file does not exists in storage");
                     }
                 }
 
@@ -410,7 +428,7 @@ int perform(Client_setup setup, LList *request_commands)
             int res;
             if ((res = readNFiles(n, c_setup.dirname_buffer)) == -1)
             {
-                printf("some error occurred\n");
+                print_op("some error occurred");
             }
         }
         break;
@@ -427,33 +445,6 @@ int perform(Client_setup setup, LList *request_commands)
 
         case 'c':
         {
-            int i = 0;
-
-            printf("ARG[0] = %s\n", request_args[0]);
-
-            while (request_args[i] != NULL)
-            {
-
-                char abs_path[MAXFILENAME];
-
-                realpath(request_args[i], abs_path);
-
-                PATH_CHECK(abs_path);
-
-                printf("\n-c command execution:\n");
-
-                if (removeFile(abs_path) == 0)
-                {
-                    printf("\n<<<SUCCESFULLY REMOVED THE FILE>>>\n");
-                }
-                else
-                {
-                    /* error handling */
-                    printf("\n<<<ERROR WHILE REMOVING DUE TO (%s)>>>\n", translate_error_code(errno));
-                }
-
-                i++;
-            }
         }
         break;
 
@@ -461,15 +452,19 @@ int perform(Client_setup setup, LList *request_commands)
             break;
         }
 
-        printf("(request performed) dequeuing the request...\n");
+        print_op("(request performed) dequeuing the request...");
+
         LL_dequeue(request_commands);
 
         free(request_args);
 
         if (request_commands->head == NULL)
-            printf("Request list is empty\n");
+            print_op("Request list is empty\n");
         else
-            print_requests(request_commands);
+        {
+            if (c_setup.op_log == TRUE)
+                print_requests(request_commands);
+        }
 
         current_request_node = request_commands->head;
     }
@@ -490,9 +485,7 @@ Client_setup apply_setup(LList config_commands)
     curr_setup.op_log = 0;
 
     if (LL_contains_key(config_commands, "f") == TRUE)
-    {
         curr_setup.socket_pathname = (char *)LL_get_by_key(config_commands, "f");
-    }
     else
     {
         fprintf(stderr, "must specify socket path using -f option.\n");
@@ -502,9 +495,9 @@ Client_setup apply_setup(LList config_commands)
     }
 
     if (LL_contains_key(config_commands, "p") == TRUE)
-    {
-        curr_setup.op_log = atol((char *)LL_get_by_key(config_commands, "p"));
-    }
+        curr_setup.op_log = TRUE;
+    else
+        curr_setup.op_log = FALSE;
 
     if (LL_contains_key(config_commands, "t") == TRUE)
     {
@@ -611,7 +604,7 @@ char **parse_comma_args(char *arguments)
     args_counter++;
 
     // Alloco correttamente il vettore di argomenti
-    char **strings = malloc(sizeof(char *) * args_counter);
+    char **strings = safe_malloc(sizeof(char *) * args_counter);
     int j = 0;
 
     // Prendo la prima stringa
@@ -644,7 +637,7 @@ void check_argc(int argcount)
 {
     if (argcount == 1)
     {
-        printf("You have to insert at least an argument to start\n");
+        print_op("You have to insert at least an argument to start");
         exit(EXIT_FAILURE);
     }
 }
@@ -697,7 +690,7 @@ int lsR(const char *dirname, int *n)
 
         if ((dir = opendir(dirname)) == NULL)
         {
-            printf("Error while opening %s dir\n", dirname);
+            print_op("Error while opening %s dir", dirname);
             perror("opendir");
             return FS_ERR;
         }
@@ -749,16 +742,16 @@ int lsR(const char *dirname, int *n)
                 {
                     (*n)--;
                     if (closeFile(realpath(dirname, abs_path)) == -1)
-                        printf("\n<<<CLOSE FAILED DUE TO (%s)>>>\n", translate_error_code(errno));
+                        print_op("<<<CLOSE FAILED DUE TO (%s)>>>", translate_error_code(errno));
 
-                    printf("closed successfully\n");
+                    print_op("closed successfully");
                 }
                 else
-                    printf("\n<<<WRITE FILE ERROR>>>\n");
+                    print_op("<<<WRITE FILE ERROR>>>");
             }
             else
             {
-                printf("\n<<<OPEN FAILED DUE TO (%s)>>>\n", translate_error_code(errno));
+                print_op("<<<OPEN FAILED DUE TO (%s)>>>", translate_error_code(errno));
             }
 
             return 0;
@@ -803,4 +796,19 @@ void manage_config_option(char **opt_id, char **opt_arg_value, int opt, LList *c
 
     (*opt_id) = malloc(sizeof(char) * 2);
     (*opt_arg_value) = malloc(sizeof(char) * 50);
+}
+
+void print_op(const char *format, ...)
+{
+    if (c_setup.op_log == TRUE)
+    {
+        char buffer[256];
+        va_list args;
+
+        va_start(args, format);
+        vsnprintf(buffer, 256, format, args);
+        va_end(args);
+
+        printf("%s\n", buffer);
+    }
 }

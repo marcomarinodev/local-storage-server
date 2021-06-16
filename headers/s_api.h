@@ -14,6 +14,7 @@
 #include <fcntl.h>
 
 #include "consts.h"
+#include "utility.h"
 
 #define UNIX_PATH_MAX 108
 
@@ -141,9 +142,5 @@ int unlockFile(const char *pathname);
 int appendToFile(const char *pathname, void *buf, size_t size, const char *dirname);
 
 long int find_size(const char *pathname);
-
-ssize_t readn(int fd, void *ptr, size_t n);
-
-ssize_t writen(int fd, void *ptr, size_t n);
 
 #endif

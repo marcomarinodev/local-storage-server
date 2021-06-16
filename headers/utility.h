@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <unistd.h>
 #include <errno.h>
 #include <sys/types.h>
 #include <string.h>
@@ -58,5 +59,9 @@ static inline void print_error(const char *str, ...)
 int str_toint(char *string);
 
 void *safe_malloc(size_t mem_size);
+
+ssize_t readn(int fd, void *ptr, size_t n);
+
+ssize_t writen(int fd, void *ptr, size_t n);
 
 #endif

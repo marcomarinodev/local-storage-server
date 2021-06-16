@@ -69,8 +69,4 @@ void print_conn(Node *to_print);
 
 char *cmd_type_to_string(int cmd_code);
 
-ssize_t readn(int fd, void *ptr, size_t n);
-
-ssize_t writen(int fd, void *ptr, size_t n);
-
 #endif

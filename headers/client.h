@@ -15,6 +15,7 @@
 
 #include "linked_list.h"
 #include "s_api.h"
+#include "utility.h"
 
 #define HELP_EXIT -1
 #define MISSING_ARG -2
@@ -94,6 +95,10 @@ void print_request_node(Node *to_print);
 void print_setup(Client_setup setup);
 
 void print_requests(LList *request_commands);
+
+void print_op(const char *format, ...);
+
+void stub_perform();
 
 char *translate_error_code(int code);
 

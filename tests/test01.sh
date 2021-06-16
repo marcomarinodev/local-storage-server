@@ -14,5 +14,6 @@ sleep 3s
 
 sleep 1s
 
+echo $pid
 kill -s SIGHUP $pid
 wait $pid
