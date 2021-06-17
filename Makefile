@@ -49,7 +49,7 @@ libs/libapi.so: $(O_FOLDER)/s_api.o $(O_FOLDER)/utility.o
 	$(CC) -shared -o libs/libapi.so $^
 
 $(O_FOLDER)/s_api.o:
-	$(CC) $(INCLUDES) $(STD_FLAGS) $(DEPS_FOLDER)/s_api.c -g -c -fPIC -o $@
+	$(CC) $(STDC) $(INCLUDES) $(STD_FLAGS) $(DEPS_FOLDER)/s_api.c -g -c -fPIC -o $@
 
 $(O_FOLDER)/utility.o:
 	$(CC) $(STDC) $(INCLUDES) $(STD_FLAGS) $(DEPS_FOLDER)/utility.c -g -c -fPIC -o $@
