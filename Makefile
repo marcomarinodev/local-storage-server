@@ -68,6 +68,8 @@ cleanall:
 	-rm -f libs/*.so
 	-rm /tmp/server_sock
 	-rm -r ServerLogs
+	mkdir build
+	mkdir build/objs
 
 # tests
 test1: client server
