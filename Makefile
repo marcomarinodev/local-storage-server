@@ -1,7 +1,7 @@
 .PHONY : test1 test2
 
 CC = gcc
-STDC = -std=c99
+STDC = -std=gnu99
 STD_FLAGS = -Wall -pedantic
 THREAD_FLAGS = -lpthread
 INCLUDES = -I./headers
