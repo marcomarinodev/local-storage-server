@@ -142,6 +142,9 @@ int main(int argc, char *argv[])
     printf("\n<<<Joining the signal thread>>>\n");
     safe_pjoin(sighandler_thread, NULL);
 
+    /* closing log file */
+    fclose(log_stream);
+
     return 0;
 }
 
@@ -409,8 +412,6 @@ static void run_server(Setup *server_setup)
                             /* pipe reading (re-listen to a client) */
                             if (fd == mwpipe[0])
                             {
-                                print_log("Re-listen to %d descriptor", mwpipe[0]);
-
                                 int res, new_desc;
                                 if ((res = readn(mwpipe[0], &new_desc, sizeof(int))) == -1)
                                 {
@@ -483,8 +484,8 @@ static void run_server(Setup *server_setup)
                                     FD_CLR(fd, &active_set);
                                     safe_punlock(&ac_mutex);
 
-                                    print_log("\nIncoming request:\n- calling client desc: %d\n- cmd: %s\n- path: %s",
-                                              new_request.fd_cleint,
+                                    print_log("\nIncoming request:\n- calling client pid: %d\n- cmd: %s\n- path: %s",
+                                              new_request.calling_client,
                                               cmd_type_to_string(new_request.cmd_type),
                                               new_request.pathname);
 
@@ -679,7 +680,7 @@ static void *worker_func(void *args)
                     safe_punlock(&rec->lock);
 
                     print_log("%s opened with success", incoming_request.pathname);
-                
+
                     response.code = OPEN_SUCCESS;
                 }
                 else
@@ -740,14 +741,17 @@ static void *worker_func(void *args)
 
                         file_response.content_size = files_to_send[i].size;
 
-                        printf("sizeof(rec->content) = %ld\n", files_to_send[i].size);
-
                         strncpy(file_response.path, files_to_send[i].pathname, strlen(files_to_send[i].pathname) + 1);
                         memcpy(file_response.content, files_to_send[i].content, files_to_send[i].size);
 
-                        printf("sending file...\n");
                         writen(incoming_request.fd_cleint, &file_response, sizeof(file_response));
+
+                        if (files_to_send[i].content != NULL)
+                            free(files_to_send[i].content);
                     }
+
+                    if (files_to_send != NULL)
+                        free(files_to_send);
 
                     /* Having space to append... */
                     time_t now = time(NULL);

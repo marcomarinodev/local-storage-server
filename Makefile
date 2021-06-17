@@ -68,3 +68,10 @@ cleanall:
 	-rm -f libs/*.so
 	-rm /tmp/server_sock
 	-rm -r ServerLogs
+
+# tests
+test1: client server
+	./tests/test01.sh 
+
+test2: client server
+	./tests/test02.sh

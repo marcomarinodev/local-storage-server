@@ -29,43 +29,25 @@ int main(int argc, char *argv[])
 
         if (errno == 0)
         {
+            /* append testing */
+            // stub_perform();
 
-            stub_perform();
+            int r;
+            if ((r = perform(c_setup, &request_commands)) == NOSUCHFILE_ORDIR)
+            {
+                printf("(%d) - No such file or directory!\n", getpid());
+                if (config_commands.head != NULL)
+                    LL_free(config_commands, NULL);
+                if (request_commands.head != NULL)
+                    LL_free(request_commands, NULL);
 
-            /* append file testing */
-            openFile("test_src/txts/test_01.txt", O_CREATE);
-
-            writeFile("test_src/txts/test_01.txt", NULL);
-
-            appendToFile("test_src/txts/test_01.txt", "   >>>hey hey hey sono un test<<<", 34, NULL);
-
-            closeFile("test_src/txts/test_01.txt");
-
-            int er = appendToFile("test_src/txts/test_01.txt", "@@@", 4, NULL);
-
-            if (er == -1)
-                printf("error in second appendToFile");
-
-            openFile("test_src/txts/test_01.txt", NO_FLAGS);
-
-            closeFile("test_src/txts/test_01.txt");
-
-            // int r;
-            // if ((r = perform(c_setup, &request_commands)) == NOSUCHFILE_ORDIR)
-            // {
-            //     printf("(%d) - No such file or directory!\n", getpid());
-            //     if (config_commands.head != NULL)
-            //         LL_free(config_commands, NULL);
-            //     if (request_commands.head != NULL)
-            //         LL_free(request_commands, NULL);
-
-            //     if (closeConnection(c_setup.socket_pathname) == -1)
-            //     {
-            //         perror("Closing Connection failed (Client)\n");
-            //         exit(EXIT_FAILURE);
-            //     }
-            //     return errno;
-            // }
+                if (closeConnection(c_setup.socket_pathname) == -1)
+                {
+                    perror("Closing Connection failed (Client)\n");
+                    exit(EXIT_FAILURE);
+                }
+                return errno;
+            }
         }
         else
         {
@@ -209,6 +191,18 @@ int _getopt(LList *configs, LList *reqs, int argcount, char **_argv)
 
 void stub_perform()
 {
+    /* normal procedure to create a new file in storage */
+    openFile("test_src/txts/test_01.txt", O_CREATE);
+
+    writeFile("test_src/txts/test_01.txt", NULL);
+
+    closeFile("test_src/txts/test_01.txt");
+
+    /* appendToFile is atomic and the only way to edit a file in storage
+     * is to append something...
+    */
+    appendToFile("test_src/txts/test_01.txt", "   >>>hey hey hey sono un test<<<", 34, NULL);
+    appendToFile("test_src/txts/test_01.txt", "@@@", 4, NULL);
 }
 
 int perform(Client_setup setup, LList *request_commands)
