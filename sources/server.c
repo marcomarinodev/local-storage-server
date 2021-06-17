@@ -863,6 +863,7 @@ static void *worker_func(void *args)
                     /* updating metadata */
                     rec->last_edit = now;
                     rec->last_op = WRITE_SUCCESS;
+                    rec->is_new = FALSE;
 
                     /* init space for content */
                     if (rec->content == NULL)
@@ -1139,14 +1140,21 @@ FRecord *select_lru_victims(size_t incoming_req_size, char *incoming_path, int *
 
     while (((server_stat.actual_capacity > server_stat.capacity) && n_to_eject >= 0) || ((server_stat.actual_max_files > server_stat.max_files) && n_to_eject >= 0))
     {
-
+        print_log("calling LRU function");
         char *oldest_path = lru(storage_ht, incoming_path);
+
+        if (oldest_path == NULL)
+        {
+            print_log("LRU did not find a file to delete");
+            return NULL;
+        }
 
         print_log("victim selected and deleted is %s", oldest_path);
 
         FRecord *cur_victim = (FRecord *)ht_get(storage_ht, oldest_path);
 
-        memcpy(&(victims[n_to_eject]), cur_victim, sizeof(*cur_victim));
+        memset(&(victims[n_to_eject]), 0, sizeof(FRecord));
+        memcpy(&(victims[n_to_eject]), cur_victim, sizeof(FRecord));
 
         server_stat.actual_capacity -= cur_victim->size;
 
@@ -1171,6 +1179,8 @@ FRecord *select_lru_victims(size_t incoming_req_size, char *incoming_path, int *
 
 char *lru(HashTable ht, char *incoming_path)
 {
+    int found = -1;
+
     if (storage_ht.size == 0)
         return NULL;
 
@@ -1191,11 +1201,21 @@ char *lru(HashTable ht, char *incoming_path)
                 /* current record */
                 FRecord *rec = (FRecord *)LL_get(storage_ht.lists[row], index);
 
+                char time_buff[30];
+                struct tm *info;
+                info = localtime(&rec->last_edit);
+
+                strftime(time_buff, sizeof(time_buff), "%b %d %H:%M:%S", info);
+
+                print_log("\n%s\n- is_new: %d\n- is_open: %d\n- last_op: %d\n- last_client: %d\n- last_edit: %s",
+                          rec->pathname, rec->is_new, rec->is_open, rec->last_op, rec->last_client, time_buff);
+
                 /* it could be the victim */
-                if ((difftime(oldest, rec->last_edit) > 0) &&
+                if ((rec->last_edit <= oldest) &&
                     (strcmp(rec->pathname, incoming_path) != 0))
                 {
                     /* found a later time than oldest */
+                    found = 1;
                     oldest = rec->last_edit;
                     strncpy(oldest_path, rec->pathname, MAX_PATHNAME);
                 }
@@ -1203,7 +1223,13 @@ char *lru(HashTable ht, char *incoming_path)
         }
     }
 
-    return oldest_path;
+    if (found == 1)
+        return oldest_path;
+    else
+    {
+        free(oldest_path);
+        return NULL;
+    }
 }
 
 int log_init(char *config_logpath)

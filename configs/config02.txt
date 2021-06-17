@@ -1,4 +1,0 @@
-/tmp/server_sock
-1
-1000
-1000

@@ -1,0 +1,5 @@
+/tmp/server_sock
+4
+1000000
+10
+ServerLogs
