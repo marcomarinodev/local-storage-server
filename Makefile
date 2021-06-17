@@ -67,7 +67,7 @@ cleanall:
 	-rm -f build/objs/*.o
 	-rm -f libs/*.so
 	-rm /tmp/server_sock
-	-rm -r ServerLogs
+	-rm -rf ServerLogs
 
 # tests
 test1: client server
