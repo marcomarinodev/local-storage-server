@@ -42,9 +42,6 @@ $(O_FOLDER)/queue.o:
 $(O_FOLDER)/doubly_ll.o:
 	$(CC) $(STDC) $(INCLUDES) $(STD_FLAGS) $(DEPS_FOLDER)/doubly_ll.c -g -c -fPIC -o $@
 
-$(O_FOLDER)/queue.o:
-	$(CC) $(STDC) $(INCLUDES) $(STD_FLAGS) $(DEPS_FOLDER)/queue.c -g -c -fPIC -o $@
-
 $(O_FOLDER)/linked_list.o:
 	$(CC) $(STDC) $(INCLUDES) $(STD_FLAGS) $(DEPS_FOLDER)/linked_list.c -g -c -fPIC -o $@
 
