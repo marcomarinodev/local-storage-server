@@ -64,6 +64,7 @@ cleanall:
 	-rm -r ServerLogs
 	mkdir build
 	mkdir build/objs
+	mkdir libs
 
 # tests
 test1: client server
