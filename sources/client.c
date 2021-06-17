@@ -163,7 +163,11 @@ int _getopt(LList *configs, LList *reqs, int argcount, char **_argv)
 
             if (optopt == 'R')
             {
-                manage_request_option(&opt_code, 'R', &current_request, reqs, "-1");
+                char tmp[3];
+
+                sprintf(tmp, "%d", -1);
+
+                manage_request_option(&opt_code, 'R', &current_request, reqs, tmp);
                 break;
             }
             else
