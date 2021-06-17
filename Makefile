@@ -61,7 +61,9 @@ cleanall:
 	-rm -f build/objs/*.o
 	-rm -f libs/*.so
 	-rm /tmp/server_sock
-	-rm -r ServerLogs
+	-rm -rf ServerLogs
+	-rm -rf build
+	-rm -rf libs
 	mkdir build
 	mkdir build/objs
 	mkdir libs
