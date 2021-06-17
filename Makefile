@@ -15,10 +15,10 @@ server_deps = sources/server.c libs/libserv.so
 all: client server
 
 client: $(client_deps)
-	$(CC) $(INCLUDES) $(STD_FLAGS) sources/client.c -g -o client -Wl,-rpath,./libs -L ./libs -lds -lapi $(THREAD_FLAGS)
+	$(CC) $(STDC) $(INCLUDES) $(STD_FLAGS) sources/client.c -g -o client -Wl,-rpath,./libs -L ./libs -lds -lapi $(THREAD_FLAGS)
 
 server: $(server_deps)
-	$(CC) $(INCLUDES) $(STD_FLAGS) sources/server.c -g -o server -Wl,-rpath,./libs -L ./libs -lserv -lapi $(THREAD_FLAGS)
+	$(CC) $(STDC) $(INCLUDES) $(STD_FLAGS) sources/server.c -g -o server -Wl,-rpath,./libs -L ./libs -lserv -lapi $(THREAD_FLAGS)
 
 # Libraries
 libs/libds.so: $(O_FOLDER)/queue.o $(O_FOLDER)/linked_list.o $(O_FOLDER)/pthread_custom.o $(O_FOLDER)/utility.o
