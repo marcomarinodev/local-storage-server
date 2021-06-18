@@ -5,8 +5,6 @@ extern int fd_socket;
 
 int openConnection(const char *sockname, int msec, const struct timespec abstime)
 {
-    // FD_SOCKET DOVREBBE ESSERE QUI? OPPURE DOVREBBE ESSERE CHIAMATO GLOBALMENTE?
-    // int fd_socket
     struct sockaddr_un sa;
     time_t rawtime;
 
