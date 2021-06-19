@@ -78,7 +78,9 @@ void d_insertAfter(struct dd_Node *prev_node, int new_data)
 void d_print(struct dd_Node *node)
 {
     struct dd_Node *curr;
-    printf("\nTraversal in forward direction \n");
+
+    curr = node;
+
     while (curr != NULL)
     {
         printf(" %d ", curr->data);

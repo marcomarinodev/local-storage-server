@@ -314,6 +314,9 @@ static void run_server(Setup *server_setup)
 
                         dim++;
 
+                        printf("\n %%%% NEW_CONN occured: ACTIVE CONNECTIONS with dim = %d ", dim);
+                        d_print(active_connections);
+
                         safe_punlock(&ac_mutex);
 
                         if (fd_client > fd_num)
@@ -372,6 +375,9 @@ static void run_server(Setup *server_setup)
 
                                 close(fd_socket);
                                 FD_CLR(fd_socket, &active_set);
+
+                                printf("\n %%%% SIGHUP occured: ACTIVE CONNECTIONS with dim = %d ", dim);
+                                d_print(active_connections);
 
                                 /* if there are some active connections, then the server must complete their
                                  * requests, so we do another select loop,

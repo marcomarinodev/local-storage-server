@@ -69,6 +69,9 @@ cleanall:
 	mkdir libs
 
 # tests
+test0: client server
+	./tests/test00.sh
+
 test1: client server
 	./tests/test01.sh 
 
