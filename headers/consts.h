@@ -8,7 +8,7 @@
 #define O_LOCK 2
 
 /* strings limits */
-#define MAX_CHARACTERS 900000
+#define MAX_CHARACTERS 800000
 #define MAX_PATHNAME 300
 #define MAX_LOGFILENAME 80
 #define MAX_TIMESTRING 100

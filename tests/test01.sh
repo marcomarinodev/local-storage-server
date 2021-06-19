@@ -2,7 +2,7 @@
 
 echo "Test 01"
 
-valgrind --leak-check=full --show-leak-kinds=all ./server configs/config1.txt &
+valgrind  ./server configs/config1.txt &
 pid=$!
 
 sleep 3s

@@ -56,6 +56,7 @@ int openFile(const char *pathname, int flags)
     Response response;
     ServerRequest request;
     long int file_size;
+    int res;
 
     if ((file_size = find_size(pathname)) == -1)
     {
@@ -102,7 +103,11 @@ int openFile(const char *pathname, int flags)
         return -1;
     }
 
-    readn(fd_socket, &response, sizeof(response));
+    if ((res = readn(fd_socket, &response, sizeof(response))) == -1)
+    {
+        errno = READN_ERR;
+        return -1;
+    }
 
     if (errno != EINTR)
     {
@@ -147,6 +152,7 @@ int removeFile(const char *pathname)
 {
     ServerRequest request;
     Response response;
+    int res, req;
 
     /* request init */
     memset(&request, 0, sizeof(ServerRequest));
@@ -157,10 +163,18 @@ int removeFile(const char *pathname)
     request.fd_cleint = 0;
 
     printf("sending...\n");
-    writen(fd_socket, &request, sizeof(ServerRequest));
+    if ((req = writen(fd_socket, &request, sizeof(ServerRequest))) == -1)
+    {
+        errno = WRITEN_ERR;
+        return -1;
+    }
 
     printf("receiving...\n");
-    readn(fd_socket, &response, sizeof(response));
+    if ((res = readn(fd_socket, &response, sizeof(response))) == -1)
+    {
+        errno = READN_ERR;
+        return -1;
+    }
 
     /* response.code handling */
     if (errno != EINTR)
@@ -189,6 +203,7 @@ int readFile(const char *pathname, void **buf, size_t *size)
 {
     ServerRequest request;
     Response response;
+    int res, req;
 
     memset(&request, 0, sizeof(ServerRequest));
     request.calling_client = getpid();
@@ -205,11 +220,19 @@ int readFile(const char *pathname, void **buf, size_t *size)
 
     printf("sending...\n");
 
-    writen(fd_socket, &request, sizeof(ServerRequest));
+    if ((req = writen(fd_socket, &request, sizeof(ServerRequest))) == -1)
+    {
+        errno = WRITEN_ERR;
+        return -1;
+    }
 
     printf("receiving...\n");
 
-    readn(fd_socket, &response, sizeof(response));
+    if ((res = readn(fd_socket, &response, sizeof(response))) == -1)
+    {
+        errno = READN_ERR;
+        return -1;
+    }
 
     if (response.code == READ_SUCCESS)
     {
@@ -232,6 +255,7 @@ int closeFile(const char *pathname)
 {
     Response response;
     ServerRequest request;
+    int res, req;
 
     memset(&request, 0, sizeof(ServerRequest));
     request.calling_client = getpid();
@@ -241,9 +265,17 @@ int closeFile(const char *pathname)
     request.flags = NO_FLAGS;
     request.fd_cleint = 0;
 
-    writen(fd_socket, &request, sizeof(ServerRequest));
+    if ((req = writen(fd_socket, &request, sizeof(ServerRequest))) == -1)
+    {
+        errno = WRITEN_ERR;
+        return -1;
+    }
 
-    readn(fd_socket, &response, sizeof(response));
+    if ((res = readn(fd_socket, &response, sizeof(response))) == -1)
+    {
+        errno = READN_ERR;
+        return -1;
+    }
 
     printf("close file response from server\n");
 
@@ -304,10 +336,10 @@ int writeFile(const char *pathname, const char *dirname)
 
     printf("FILE TO SEND = %s WITH SIZE %ld\n", request.content, request.size);
 
-    int sending_err = 0;
+    int sending_err, res;
 
     if (fd_is_valid(fd_socket) == 1)
-        printf("sending... to %d\n", fd_socket);    
+        printf("sending... to %d\n", fd_socket);
     else
         printf("fd_socket not valid\n");
 
@@ -319,7 +351,11 @@ int writeFile(const char *pathname, const char *dirname)
 
     printf("--- reading to socket\n");
     /* put the n_to_eject inside response.code */
-    readn(fd_socket, &response, sizeof(response));
+    if ((res = readn(fd_socket, &response, sizeof(response))) == -1)
+    {
+        errno = READN_ERR;
+        return -1;
+    }
 
     int n_ejected = response.code;
     printf("\n>>>Ejected files: %d<<<\n", n_ejected);
@@ -330,7 +366,11 @@ int writeFile(const char *pathname, const char *dirname)
         /* expecting response.code files to be ejected */
         for (int i = 0; i < n_ejected; i++)
         {
-            readn(fd_socket, &response, sizeof(response));
+            if ((res = readn(fd_socket, &response, sizeof(response))) == -1)
+            {
+                errno = READN_ERR;
+                return -1;
+            }
 
             /* put ejected files into dirname if it's specified */
             if (dirname != NULL)
@@ -367,7 +407,11 @@ int writeFile(const char *pathname, const char *dirname)
         }
     }
 
-    readn(fd_socket, &response, sizeof(response));
+    if ((res = readn(fd_socket, &response, sizeof(response))) == -1)
+    {
+        errno = READN_ERR;
+        return -1;
+    }
     printf("\n>>>Reading the final response<<<\n");
 
     if (response.code == WRITE_SUCCESS)
@@ -383,6 +427,12 @@ int fd_is_valid(int fd)
 
 int appendToFile(const char *pathname, void *buf, size_t size, const char *dirname)
 {
+    if (pathname == NULL)
+    {
+        errno = INVALID_PATHNAME;
+        return -1;
+    }
+
     /* sends the size with request.size = size */
     ServerRequest request;
     Response response;
@@ -397,17 +447,22 @@ int appendToFile(const char *pathname, void *buf, size_t size, const char *dirna
     memset(request.content, 0, MAX_CHARACTERS);
     memcpy(request.content, buf, size);
 
-    int sending_err = 0;
+    int sending_err, res;
 
     printf("sending...\n");
     if ((sending_err = writen(fd_socket, &request, sizeof(ServerRequest))) == -1)
     {
         printf("(%d) - socket request write error\n", getpid());
+        errno = WRITEN_ERR;
         return -1;
     }
 
     /* put the n_to_eject inside response.code */
-    readn(fd_socket, &response, sizeof(response));
+    if ((res = readn(fd_socket, &response, sizeof(response))) == -1)
+    {
+        errno = READN_ERR;
+        return -1;
+    }
 
     int n_ejected = response.code;
     printf("\n>>>Ejected files: %d<<<\n", response.code);
@@ -418,9 +473,20 @@ int appendToFile(const char *pathname, void *buf, size_t size, const char *dirna
 
         /* expecting response.code files to be ejected */
         for (int i = 0; i < n_ejected; i++)
-            readn(fd_socket, &ejectedFiles[i], sizeof(ejectedFiles[i]));
+        {
+            if ((res = readn(fd_socket, &ejectedFiles[i], sizeof(ejectedFiles[i]))) == -1)
+            {
+                errno = READN_ERR;
+                return -1;
+            }
+        }
 
-        readn(fd_socket, &response, sizeof(response));
+        if ((res = readn(fd_socket, &response, sizeof(response))) == -1)
+        {
+            errno = READN_ERR;
+            return -1;
+        }
+
         printf("\n>>>Reading the final response<<<\n");
 
         /* put ejected files into dirname if it's specified */
@@ -448,11 +514,13 @@ int appendToFile(const char *pathname, void *buf, size_t size, const char *dirna
                 strcat(dir_abs_path, "/");
                 strcat(dir_abs_path, filename);
 
-                int fd = open(dir_abs_path, (O_RDWR | O_CREAT));
+                int fd, res;
 
-                write(fd, ejectedFiles[i].content, ejectedFiles[i].content_size * sizeof(char));
+                SYSCALL(fd, open(dir_abs_path, (O_RDWR | O_CREAT)), "open error");
 
-                close(fd);
+                SYSCALL(res, write(fd, ejectedFiles[i].content, ejectedFiles[i].content_size * sizeof(char)), "write error");
+
+                SYSCALL(res, close(fd), "close error");
             }
         }
     }
@@ -465,8 +533,15 @@ int appendToFile(const char *pathname, void *buf, size_t size, const char *dirna
 
 int readNFiles(int n, const char *dirname)
 {
+    if (dirname == NULL)
+    {
+        errno = INVALID_PATHNAME;
+        return -1;
+    }
+
     Response response;
     ServerRequest request;
+    int res;
 
     /* Clear node struct to suppress valgrind warnings */
     memset(&request, 0, sizeof(ServerRequest));
@@ -481,10 +556,18 @@ int readNFiles(int n, const char *dirname)
     request.fd_cleint = 0;
 
     /* sending how many file the client wants to read */
-    writen(fd_socket, &request, sizeof(request));
+    if ((res = writen(fd_socket, &request, sizeof(request))) == -1)
+    {
+        errno = WRITEN_ERR;
+        return -1;
+    }
 
     /* right here the client knows how many files can request to read */
-    readn(fd_socket, &response, sizeof(response));
+    if ((res = readn(fd_socket, &response, sizeof(response))) == -1)
+    {
+        errno = READN_ERR;
+        return -1;
+    }
 
     printf("\n<<<info sent, now i'm waiting %d files>>>\n", response.code);
 
@@ -494,7 +577,11 @@ int readNFiles(int n, const char *dirname)
     {
         /* listen to the server to a file in storage */
         printf("\n<<<waiting for %d file>>>\n", i);
-        readn(fd_socket, &response, sizeof(response));
+        if ((res = readn(fd_socket, &response, sizeof(response))) == -1)
+        {
+            errno = READN_ERR;
+            return -1;
+        }
 
         if (response.code == READ_SUCCESS)
         {
@@ -521,11 +608,14 @@ int readNFiles(int n, const char *dirname)
                 strcat(dir_abs_path, "/");
                 strcat(dir_abs_path, filename);
 
-                int fd = open(dir_abs_path, (O_RDWR | O_CREAT));
+                // int fd = open(dir_abs_path, (O_RDWR | O_CREAT));
+                int fd;
+                SYSCALL(fd, open(dir_abs_path, (O_RDWR | O_CREAT)), "open error");
 
-                write(fd, response.content, response.content_size * sizeof(char));
+                int res;
+                SYSCALL(res, write(fd, response.content, response.content_size * sizeof(char)), "write error");
 
-                close(fd);
+                SYSCALL(res, close(fd), "close error");
             }
             else /* dirname is not specified, so we basically print out the content */
             {

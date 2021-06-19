@@ -265,10 +265,10 @@ static void run_server(Setup *server_setup)
     while (ending_all != TRUE)
     {
         safe_plock(&ac_mutex);
-        rdset = active_set; /* preparo maschera per select */
+        rdset = active_set; /* select mask */
         safe_punlock(&ac_mutex);
 
-        struct timeval tv = {1, 0};
+        struct timeval tv = {1, 0}; /* just a timeout for security ... */
 
         if (select(fd_num + 1, &rdset, NULL, NULL, &tv) == -1)
         {
@@ -288,7 +288,7 @@ static void run_server(Setup *server_setup)
 
             // printf("\n");
 
-            // printf("$$$ ciclo bitmap descrittori (fd_set dim = %d):\n", fd_num);
+            // printf("$$$ bitmap descriptors (fd_set dim = %d):\n", fd_num);
             for (fd = 0; fd <= fd_num; fd++)
             {
                 if (FD_ISSET(fd, &rdset))
@@ -297,7 +297,7 @@ static void run_server(Setup *server_setup)
                     printf("0");
 
                 /* descriptor is ready */
-                // printf("$$$ controllo indice %d[set=%d]\n", fd, FD_ISSET(fd, &rdset));
+                // printf("$$$ index checking %d[set=%d]\n", fd, FD_ISSET(fd, &rdset));
                 if (FD_ISSET(fd, &rdset))
                 {
                     /* listen socket ready ==> accept is not blocking */
@@ -309,13 +309,10 @@ static void run_server(Setup *server_setup)
 
                         FD_SET(fd_client, &active_set);
 
-                        /* append the new connection to active list */
+                        /* appending new connection to active list */
                         d_append(&active_connections, fd_client);
 
                         dim++;
-
-                        printf("\n %%%% NEW_CONN occured: ACTIVE CONNECTIONS with dim = %d ", dim);
-                        d_print(active_connections);
 
                         safe_punlock(&ac_mutex);
 
@@ -375,9 +372,6 @@ static void run_server(Setup *server_setup)
 
                                 close(fd_socket);
                                 FD_CLR(fd_socket, &active_set);
-
-                                printf("\n %%%% SIGHUP occured: ACTIVE CONNECTIONS with dim = %d ", dim);
-                                d_print(active_connections);
 
                                 /* if there are some active connections, then the server must complete their
                                  * requests, so we do another select loop,

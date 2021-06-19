@@ -18,12 +18,30 @@
 
 #define UNIX_PATH_MAX 108
 
+// errnos
+#define INVALID_SOCKNAME -70
+#define FATAL_ERROR -71
+#define NOT_A_FLAG -72
+#define READN_ERR -73
+#define WRITEN_ERR -74
+#define INVALID_PATHNAME -75
+#define UNKNOWN_ERROR -76
+
 #define SYSCALL(r, c, e) \
     if ((r = c) == -1)   \
     {                    \
         perror(e);       \
         exit(errno);     \
     }
+
+typedef struct client_setup
+{
+    char *socket_pathname;
+    char *dirname_buffer;
+    char *ejected_buffer;
+    int req_time_interval;
+    int op_log;
+} Client_setup;
 
 typedef struct request_tosend
 {
