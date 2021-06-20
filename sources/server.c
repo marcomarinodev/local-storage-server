@@ -221,6 +221,7 @@ static void run_server(Setup *server_setup)
     fd_set rdset;
 
     /* socket initialization */
+    printf("\nunlinking %s\n", server_setup->server_socket_pathname);
     unlink(server_setup->server_socket_pathname);
     memset(&sa, 0, sizeof(sa));
     sa.sun_family = AF_UNIX;
@@ -543,6 +544,8 @@ static void run_server(Setup *server_setup)
         printf("\n<<<Joining %d worker thread>>>\n", i);
         safe_pjoin(workers_tid[i], NULL);
     }
+
+    unlink(server_setup->server_socket_pathname);
 
     free(workers_tid);
     free(attributes);
@@ -1248,7 +1251,7 @@ int log_init(char *config_logpath)
     time(&rawtime);
     info = localtime(&rawtime);
 
-    strftime(logs_filename, MAX_LOGFILENAME, "%d-%b-%Y.txt", info);
+    strftime(logs_filename, MAX_LOGFILENAME, "%d-%b-%Y-%H-%M-%S.txt", info);
 
     printf("log filename: %s\n", logs_filename);
 
