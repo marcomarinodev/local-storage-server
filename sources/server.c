@@ -692,7 +692,7 @@ static void *worker_func(void *args)
             }
 
             printf("writing to fd: %d\n", incoming_request.fd_cleint);
-            writen(incoming_request.fd_cleint, &response, sizeof(response));
+            COMM(writen(incoming_request.fd_cleint, &response, sizeof(response)));
         }
         break;
 
@@ -727,7 +727,7 @@ static void *worker_func(void *args)
 
                     response.code = n_to_eject;
 
-                    writen(incoming_request.fd_cleint, &response, sizeof(response));
+                    COMM(writen(incoming_request.fd_cleint, &response, sizeof(response)));
 
                     /* now the server knows which files to send */
                     /* so at the end of a single cycle a writen will be made in order to
@@ -744,7 +744,7 @@ static void *worker_func(void *args)
                         strncpy(file_response.path, files_to_send[i].pathname, strlen(files_to_send[i].pathname) + 1);
                         memcpy(file_response.content, files_to_send[i].content, files_to_send[i].size);
 
-                        writen(incoming_request.fd_cleint, &file_response, sizeof(file_response));
+                        COMM(writen(incoming_request.fd_cleint, &file_response, sizeof(file_response)));
 
                         if (files_to_send[i].content != NULL)
                             free(files_to_send[i].content);
@@ -791,7 +791,7 @@ static void *worker_func(void *args)
                 }
             }
 
-            writen(incoming_request.fd_cleint, &response, sizeof(response));
+            COMM(writen(incoming_request.fd_cleint, &response, sizeof(response)));
             safe_punlock(&storage_mutex);
         }
         break;
@@ -831,7 +831,7 @@ static void *worker_func(void *args)
 
                     response.code = n_to_eject;
 
-                    writen(incoming_request.fd_cleint, &response, sizeof(response));
+                    COMM(writen(incoming_request.fd_cleint, &response, sizeof(response)));
 
                     /* now the server knows which files to send
                      * so at the end of a single cycle a writen will be made in order to
@@ -850,7 +850,7 @@ static void *worker_func(void *args)
                         memcpy(file_response.content, files_to_send[i].content, files_to_send[i].size);
 
                         printf("sending file...\n");
-                        writen(incoming_request.fd_cleint, &file_response, sizeof(file_response));
+                        COMM(writen(incoming_request.fd_cleint, &file_response, sizeof(file_response)));
 
                         if (files_to_send[i].content != NULL)
                             free(files_to_send[i].content);
@@ -898,7 +898,7 @@ static void *worker_func(void *args)
 
             response.code = WRITE_SUCCESS;
 
-            writen(incoming_request.fd_cleint, &response, sizeof(response));
+            COMM(writen(incoming_request.fd_cleint, &response, sizeof(response)));
         }
         break;
 
@@ -944,7 +944,7 @@ static void *worker_func(void *args)
             }
 
             printf("writing to fd: %d\n", incoming_request.fd_cleint);
-            writen(incoming_request.fd_cleint, &response, sizeof(response));
+            COMM(writen(incoming_request.fd_cleint, &response, sizeof(response)));
         }
         break;
 
@@ -974,7 +974,8 @@ static void *worker_func(void *args)
             safe_punlock(&server_stat_mtx);
 
             /* telling to the client that it will have to receive n files */
-            writen(incoming_request.fd_cleint, &response, sizeof(response));
+            COMM(writen(incoming_request.fd_cleint, &response, sizeof(response)));
+            
 
             int n_to_read = response.code;
 
@@ -1003,7 +1004,7 @@ static void *worker_func(void *args)
                             memcpy(response.content, rec->content, rec->size);
 
                             response.code = READ_SUCCESS;
-                            writen(incoming_request.fd_cleint, &response, sizeof(response));
+                            COMM(writen(incoming_request.fd_cleint, &response, sizeof(response)));
 
                             print_log("sent file with:\n- path = %s\n- size = %ld", rec->pathname, rec->size);
 
@@ -1071,7 +1072,7 @@ static void *worker_func(void *args)
             }
 
             /* send the response via API */
-            writen(incoming_request.fd_cleint, &response, sizeof(response));
+            COMM(writen(incoming_request.fd_cleint, &response, sizeof(response)));
         }
 
         break;

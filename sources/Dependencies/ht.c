@@ -14,6 +14,13 @@ unsigned int sdbm_hash(const char *str, int size)
 void ht_create(HashTable *storage, int size)
 {
     storage->lists = malloc(sizeof(LList) * size);
+
+    if (!storage->lists)
+    {
+        perror("cannot allocate memory");
+        exit(EXIT_FAILURE);
+    }
+
     storage->size = size;
 
     for (int i = 0; i < size; i++)
@@ -102,6 +109,12 @@ void clean_record_node(Node *to_clean)
 void ht_print(HashTable storage)
 {
     char *list_name = (char *)malloc(sizeof(char) * 1024);
+
+    if (!list_name)
+    {
+        perror("cannot allocate memory");
+        exit(EXIT_FAILURE);
+    }
 
     for (int i = 0; i < storage.size; i++)
     {

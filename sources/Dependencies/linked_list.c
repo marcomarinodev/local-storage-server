@@ -4,6 +4,12 @@ Node *create_node(void *to_set, const char *key)
 {
     Node *node = malloc(sizeof(Node));
 
+    if (!node)
+    {
+        perror("cannot allocate memory");
+        exit(EXIT_FAILURE);
+    }
+
     node->prev = NULL;
     node->next = NULL;
     node->data = to_set;

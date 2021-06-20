@@ -3,10 +3,12 @@
 queue *createQueue(size_t allocSize)
 {
     queue *q = (queue *)malloc(sizeof(queue));
+
     if (q == NULL)
     {
         return NULL;
     }
+
     q->allocationSize = allocSize;
     q->size = 0;
     q->head = q->tail = NULL;
@@ -27,7 +29,9 @@ void enqueue(queue *q, void *_data)
         fprintf(stderr, "Error allocating memory");
         exit(-1);
     }
+
     toInsert->data = malloc(q->allocationSize);
+    
     if (toInsert->data == NULL)
     {
         fprintf(stderr, "Error allocating memory");

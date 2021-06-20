@@ -241,9 +241,9 @@ int readFile(const char *pathname, void **buf, size_t *size)
 
         memcpy(*buf, response.content, *size);
 
-        printf("\n*** %s with sizeof %ld***\n", response.path, response.content_size);
-        write(STDOUT_FILENO, response.content, response.content_size * sizeof(char));
-        printf("\n********************\n");
+        // printf("\n*** %s with sizeof %ld***\n", response.path, response.content_size);
+        // write(STDOUT_FILENO, response.content, response.content_size * sizeof(char));
+        // printf("\n********************\n");
 
         return 0;
     }
@@ -397,11 +397,11 @@ int writeFile(const char *pathname, const char *dirname)
                     strcat(dir_abs_path, "/");
                     strcat(dir_abs_path, filename);
 
-                    int fd = open(dir_abs_path, (O_RDWR | O_CREAT));
-
-                    write(fd, response.content, response.content_size * sizeof(char));
-
-                    close(fd);
+                    int fd;
+                    
+                    SYSCALL(fd, open(dir_abs_path, (O_RDWR | O_CREAT)), "open error");
+                    SYSCALL(fd, write(fd, response.content, response.content_size * sizeof(char)), "write error");
+                    SYSCALL(fd, close(fd), "close error");
                 }
             }
         }
@@ -619,8 +619,14 @@ int readNFiles(int n, const char *dirname)
             }
             else /* dirname is not specified, so we basically print out the content */
             {
+                int res;
                 printf("\n*** %s ***\n", response.path);
-                write(STDOUT_FILENO, response.content, response.content_size * sizeof(char));
+                if ((res = write(STDOUT_FILENO, response.content, response.content_size * sizeof(char))) == -1)
+                {
+                    errno = UNKNOWN_ERROR;
+                    return -1;
+                }
+
                 printf("\n********************\n");
             }
         }

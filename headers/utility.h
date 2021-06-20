@@ -18,6 +18,13 @@
         exit(errno_copy);                   \
     }
 
+#define COMM(res)                      \
+    if (res < 0)                       \
+    {                                  \
+        printf("communication error"); \
+        break;                         \
+    }
+
 static inline void print_error(const char *str, ...)
 {
     const char err[] = "ERROR: ";
