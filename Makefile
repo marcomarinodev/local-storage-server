@@ -61,6 +61,8 @@ cleanall:
 	-rm -f build/objs/*.o
 	-rm -f libs/*.so
 	-rm /tmp/server_sock
+	-rm -rf expelled_dir
+	-rm -rf read_files
 	-rm -rf ServerLogs
 	-rm -rf build
 	-rm -rf libs
