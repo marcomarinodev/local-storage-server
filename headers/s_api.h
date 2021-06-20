@@ -34,6 +34,15 @@
         exit(errno);     \
     }
 
+/**
+ * Structure that contains info about client configuration
+ * 
+ * @param socket_pathname: server socket pathname
+ * @param dirname_buffer: dirname for the read files
+ * @param ejected_buffer: dirname for the ejected files from server cache
+ * @param req_time_interval: time between requests
+ * @param op_log: -p command activation
+*/
 typedef struct client_setup
 {
     char *socket_pathname;
@@ -43,6 +52,17 @@ typedef struct client_setup
     int op_log;
 } Client_setup;
 
+/**
+ * Structure of a request
+ * 
+ * @param calling_client: pid of the calling client
+ * @param cmd_type: request command code
+ * @param pathname: file identifier in server storage
+ * @param flags: possible flags using in openFile function
+ * @param size: possible size of a file client wants to send
+ * @param content: possible content of a file client wants to send (better on heap)
+ * @param fd_cleint: (typo, should be fd_client) client file descriptor 
+*/
 typedef struct request_tosend
 {
     pid_t calling_client;
@@ -54,6 +74,14 @@ typedef struct request_tosend
     int fd_cleint;
 } ServerRequest;
 
+/**
+ * Structure of a response
+ * 
+ * @param pathname: file identifier in server storage
+ * @param content: possible content of a receiving file (better on heap)
+ * @param content_size: size of a receiving file
+ * @param code: response code from server
+*/
 typedef struct response
 {
     char path[MAX_PATHNAME];
@@ -68,6 +96,13 @@ struct pthread_arg_struct
     int worker_index;
 };
 
+/**
+ * File descriptor checker
+ * 
+ * @param fd: file descriptor to check
+ * 
+ * @return: TRUE => valid fd; FALSE => invalid fd;
+*/
 int fd_is_valid(int fd);
 
 /**
@@ -159,6 +194,13 @@ int unlockFile(const char *pathname);
 */
 int appendToFile(const char *pathname, void *buf, size_t size, const char *dirname);
 
+/**
+ * Calculates the size of a file
+ * 
+ * @param pathname: file pathname
+ * 
+ * @return: the size of pathname file 
+*/
 long int find_size(const char *pathname);
 
 #endif

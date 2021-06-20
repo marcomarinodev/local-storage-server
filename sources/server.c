@@ -490,7 +490,7 @@ static void run_server(Setup *server_setup)
                                               cmd_type_to_string(new_request.cmd_type),
                                               new_request.pathname);
 
-                                    // metti in coda
+                                    // enqueue the request
                                     safe_plock(&pending_requests_mutex);
 
                                     enqueue(pending_requests, &new_request);
@@ -552,13 +552,6 @@ static void run_server(Setup *server_setup)
     free(server_setup);
     destroyQueue(pending_requests);
     ht_free(storage_ht);
-}
-
-void print_conn(Node *to_print)
-{
-    _conn con = *(_conn *)to_print->data;
-
-    printf("\tactive fd: %d\n", con.fd);
 }
 
 void check_argc(int argc)
@@ -1288,17 +1281,6 @@ int log_init(char *config_logpath)
         printf("cannot create log (errno = %d)\n", errno);
 
     return 0;
-}
-
-void clean_all(pthread_t **workers_tid, int *fd_socket, int *fd_client)
-{
-    destroyQueue(pending_requests);
-    // free_table(storage_ht);
-
-    free((*workers_tid));
-
-    close((*fd_socket));
-    close((*fd_client));
 }
 
 void print_log(const char *format, ...)
