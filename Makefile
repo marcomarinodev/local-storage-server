@@ -64,6 +64,8 @@ cleanall:
 	-rm -rf ServerLogs
 	-rm -rf build
 	-rm -rf libs
+	mkdir expelled_dir
+	mkdir read_files
 	mkdir build
 	mkdir build/objs
 	mkdir libs
