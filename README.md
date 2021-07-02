@@ -3,6 +3,11 @@
 ### **Marco Marinò (596440)**
 ### [UNIX File Storage Server on GitHub](https://github.com/marcomarinodev/file-storage-server-SOL)
 
+## TODO 
+- fix makefile
+- fix LRU security (use single record locks in LRU replacement policy)
+- send strings from heap rather than from stack
+
 ## __Come eseguire il programma__
 1) `make cleanall`
 2) `make all`
